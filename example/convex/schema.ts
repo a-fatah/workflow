@@ -8,4 +8,12 @@ export default defineSchema({
     workflowId: vWorkflowId,
     out: v.any(),
   }).index("workflowId", ["workflowId"]),
+  subscriptions: defineTable({
+    userId: v.string(),
+    status: v.union(v.literal("trial"), v.literal("active")),
+    tier: v.union(v.literal("free"), v.literal("premium")),
+    trialEndDate: v.optional(v.number()),
+    activatedAt: v.optional(v.number()),
+    downgradedAt: v.optional(v.number()),
+  }).index("userId", ["userId"]),
 });

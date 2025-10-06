@@ -12,6 +12,7 @@ import type * as journal from "../journal.js";
 import type * as logging from "../logging.js";
 import type * as model from "../model.js";
 import type * as pool from "../pool.js";
+import type * as signals from "../signals.js";
 import type * as utils from "../utils.js";
 import type * as workflow from "../workflow.js";
 
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   logging: typeof logging;
   model: typeof model;
   pool: typeof pool;
+  signals: typeof signals;
   utils: typeof utils;
   workflow: typeof workflow;
 }>;
@@ -77,6 +79,21 @@ export type Mounts = {
                   | { kind: "canceled" };
                 startedAt: number;
                 type: "pause";
+                workId?: string;
+              }
+            | {
+                args: any;
+                argsSize: number;
+                completedAt?: number;
+                inProgress: boolean;
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                signalId: string;
+                startedAt: number;
+                type: "signal";
                 workId?: string;
               };
           stepNumber: number;
@@ -154,6 +171,21 @@ export type Mounts = {
                 startedAt: number;
                 type: "pause";
                 workId?: string;
+              }
+            | {
+                args: any;
+                argsSize: number;
+                completedAt?: number;
+                inProgress: boolean;
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                signalId: string;
+                startedAt: number;
+                type: "signal";
+                workId?: string;
               };
         }>;
         workflowId: string;
@@ -202,10 +234,75 @@ export type Mounts = {
               startedAt: number;
               type: "pause";
               workId?: string;
+            }
+          | {
+              args: any;
+              argsSize: number;
+              completedAt?: number;
+              inProgress: boolean;
+              name: string;
+              runResult?:
+                | { kind: "success"; returnValue: any }
+                | { error: string; kind: "failed" }
+                | { kind: "canceled" };
+              signalId: string;
+              startedAt: number;
+              type: "signal";
+              workId?: string;
             };
         stepNumber: number;
         workflowId: string;
       }>
+    >;
+  };
+  signals: {
+    create: FunctionReference<
+      "mutation",
+      "public",
+      {
+        generationNumber: number;
+        metadata?: any;
+        name: string;
+        validator?: any;
+        workflowId: string;
+      },
+      {
+        generationNumber: number;
+        name: string;
+        signalId: string;
+        workflowId: string;
+      }
+    >;
+    load: FunctionReference<
+      "query",
+      "public",
+      { signalId: string },
+      {
+        _creationTime: number;
+        _id: string;
+        completedAt?: number;
+        error?: string;
+        generationNumber: number;
+        metadata?: any;
+        name: string;
+        state: "pending" | "fulfilled" | "rejected";
+        validator?: any;
+        value?: any;
+        waitingStepId?: string;
+        workflowId: string;
+      }
+    >;
+    reject: FunctionReference<
+      "mutation",
+      "public",
+      { error: string; signalId: string },
+      null
+    >;
+    resolve: FunctionReference<
+      "mutation",
+      "public",
+      { metadata?: any; signalId: string; value?: any },
+      null
     >;
   };
   workflow: {
@@ -285,6 +382,21 @@ export type Mounts = {
                   | { kind: "canceled" };
                 startedAt: number;
                 type: "pause";
+                workId?: string;
+              }
+            | {
+                args: any;
+                argsSize: number;
+                completedAt?: number;
+                inProgress: boolean;
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                signalId: string;
+                startedAt: number;
+                type: "signal";
                 workId?: string;
               };
           stepNumber: number;

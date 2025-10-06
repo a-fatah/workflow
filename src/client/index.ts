@@ -79,10 +79,10 @@ export type DefinedWorkflow<
   ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
   SignalsValidator extends PropertyValidators,
 > = {
-  _mutation: RegisteredMutation<"internal", ObjectType<ArgsValidator>, void>;
-  _signals: SignalsValidator;
-  _args: ArgsValidator;
-  signals: {
+  mutation: RegisteredMutation<"internal", ObjectType<ArgsValidator>, void>;
+  _signals?: SignalsValidator;
+  _args?: ArgsValidator;
+  signals?: {
     [K in keyof SignalsValidator]: {
       resolve: (ctx: RunMutationCtx, signalId: string, value: Infer<SignalsValidator[K]>) => Promise<void>;
       reject: (ctx: RunMutationCtx, signalId: string, error: string) => Promise<void>;
@@ -151,9 +151,9 @@ export class WorkflowManager {
     }
 
     return {
-      _mutation: mutation,
-      _signals: workflow.signals as SignalsValidator,
-      _args: workflow.args as ArgsValidator,
+      mutation,
+      _signals: workflow.signals,
+      _args: workflow.args,
       signals,
     };
   }
@@ -173,7 +173,7 @@ export class WorkflowManager {
     SignalsValidator extends PropertyValidators,
   >(
     ctx: RunMutationCtx,
-    workflow: DefinedWorkflow<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator> | FunctionReference<"mutation", "internal">,
+    workflow: FunctionReference<"mutation", "internal">,
     args: ObjectType<ArgsValidator>,
     options?: CallbackOptions & {
       /**
@@ -195,7 +195,7 @@ export class WorkflowManager {
     let mutationRef: FunctionReference<"mutation", "internal">;
     
     if (this.isDefinedWorkflow(workflow)) {
-      mutationRef = workflow._mutation as any as FunctionReference<"mutation", "internal">;
+      mutationRef = workflow.mutation as any as FunctionReference<"mutation", "internal">;
     } else {
       mutationRef = workflow as FunctionReference<"mutation", "internal">;
     }
@@ -219,7 +219,7 @@ export class WorkflowManager {
   }
 
   private isDefinedWorkflow(workflow: any): workflow is DefinedWorkflow<any, any, any, any> {
-    return workflow && typeof workflow === 'object' && '_mutation' in workflow;
+    return workflow && typeof workflow === 'object' && 'mutation' in workflow;
   }
 
   /**
@@ -301,7 +301,7 @@ export class WorkflowManager {
       name?: string;
     },
   ): Promise<void> {
-    const mutationRef = workflow._mutation as any as FunctionReference<"mutation", "internal">;
+    const mutationRef = workflow.mutation as any as FunctionReference<"mutation", "internal">;
     const handle = await createFunctionHandle(mutationRef);
     await ctx.runMutation(this.component.journal.resume, {
       workflowHandle: handle,

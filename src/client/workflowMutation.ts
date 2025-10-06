@@ -4,11 +4,13 @@ import { validate, ValidationError } from "convex-helpers/validators";
 import {
   internalMutationGeneric,
   type RegisteredMutation,
+  type ReturnValueForOptionalValidator,
 } from "convex/server";
 import {
   asObjectValidator,
   type ObjectType,
   type PropertyValidators,
+  type Validator,
   v,
 } from "convex/values";
 import { createLogger } from "../component/logging.js";
@@ -33,9 +35,14 @@ const INVALID_WORKFLOW_MESSAGE = `Invalid arguments for workflow: Did you invoke
 // function handle to the workflow component for execution. This function runs
 // one "poll" of the workflow, replaying its execution from the journal until
 // it blocks next.
-export function workflowMutation<ArgsValidator extends PropertyValidators>(
+export function workflowMutation<
+  ArgsValidator extends PropertyValidators,
+  ReturnsValidator extends Validator<any, "required", any> | void = any,
+  ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator> = any,
+  SignalsValidator extends PropertyValidators = {},
+>(
   component: WorkflowComponent,
-  registered: WorkflowDefinition<ArgsValidator>,
+  registered: WorkflowDefinition<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator>,
   defaultWorkpoolOptions?: WorkpoolOptions,
 ): RegisteredMutation<"internal", ObjectType<ArgsValidator>, void> {
   const workpoolOptions = {
@@ -91,7 +98,14 @@ export function workflowMutation<ArgsValidator extends PropertyValidators>(
       const channel = new BaseChannel<StepRequest>(
         workpoolOptions.maxParallelism ?? 10,
       );
-      const step = new StepContext(workflowId, channel);
+      const step = new StepContext<SignalsValidator>(
+        workflowId,
+        channel,
+        component,
+        ctx,
+        generationNumber,
+        registered.signals,
+      );
       const executor = new StepExecutor(
         workflowId,
         generationNumber,

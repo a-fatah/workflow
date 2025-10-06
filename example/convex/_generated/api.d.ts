@@ -10,6 +10,8 @@
 
 import type * as admin from "../admin.js";
 import type * as example from "../example.js";
+import type * as signalTest from "../signalTest.js";
+import type * as subscriptionTrial from "../subscriptionTrial.js";
 import type * as transcription from "../transcription.js";
 
 import type {
@@ -29,6 +31,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   example: typeof example;
+  signalTest: typeof signalTest;
+  subscriptionTrial: typeof subscriptionTrial;
   transcription: typeof transcription;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
@@ -83,6 +87,21 @@ export declare const components: {
                     | { kind: "canceled" };
                   startedAt: number;
                   type: "pause";
+                  workId?: string;
+                }
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  inProgress: boolean;
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  signalId: string;
+                  startedAt: number;
+                  type: "signal";
                   workId?: string;
                 };
             stepNumber: number;
@@ -160,6 +179,21 @@ export declare const components: {
                   startedAt: number;
                   type: "pause";
                   workId?: string;
+                }
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  inProgress: boolean;
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  signalId: string;
+                  startedAt: number;
+                  type: "signal";
+                  workId?: string;
                 };
           }>;
           workflowId: string;
@@ -208,10 +242,75 @@ export declare const components: {
                 startedAt: number;
                 type: "pause";
                 workId?: string;
+              }
+            | {
+                args: any;
+                argsSize: number;
+                completedAt?: number;
+                inProgress: boolean;
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                signalId: string;
+                startedAt: number;
+                type: "signal";
+                workId?: string;
               };
           stepNumber: number;
           workflowId: string;
         }>
+      >;
+    };
+    signals: {
+      create: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          generationNumber: number;
+          metadata?: any;
+          name: string;
+          validator?: any;
+          workflowId: string;
+        },
+        {
+          generationNumber: number;
+          name: string;
+          signalId: string;
+          workflowId: string;
+        }
+      >;
+      load: FunctionReference<
+        "query",
+        "internal",
+        { signalId: string },
+        {
+          _creationTime: number;
+          _id: string;
+          completedAt?: number;
+          error?: string;
+          generationNumber: number;
+          metadata?: any;
+          name: string;
+          state: "pending" | "fulfilled" | "rejected";
+          validator?: any;
+          value?: any;
+          waitingStepId?: string;
+          workflowId: string;
+        }
+      >;
+      reject: FunctionReference<
+        "mutation",
+        "internal",
+        { error: string; signalId: string },
+        null
+      >;
+      resolve: FunctionReference<
+        "mutation",
+        "internal",
+        { metadata?: any; signalId: string; value?: any },
+        null
       >;
     };
     workflow: {
@@ -291,6 +390,21 @@ export declare const components: {
                     | { kind: "canceled" };
                   startedAt: number;
                   type: "pause";
+                  workId?: string;
+                }
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  inProgress: boolean;
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  signalId: string;
+                  startedAt: number;
+                  type: "signal";
                   workId?: string;
                 };
             stepNumber: number;

@@ -18,6 +18,7 @@ import {
   valueSize,
 } from "../component/schema.js";
 import type { SchedulerOptions, WorkflowComponent } from "./types.js";
+import type { SignalHandle } from "../types.js";
 
 export type WorkerResult =
   | { type: "handlerDone"; runResult: RunResult }
@@ -45,7 +46,19 @@ export type PauseStepRequest = {
   reject: (error: unknown) => void;
 };
 
-export type StepRequest = ExecutionStepRequest | PauseStepRequest;
+export type SignalAwaitRequest = {
+  type: "signal";
+  name: string;
+  signalHandle: SignalHandle<unknown>;
+  args: { signalId: string };
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+};
+
+export type StepRequest =
+  | ExecutionStepRequest
+  | PauseStepRequest
+  | SignalAwaitRequest;
 
 const MAX_JOURNAL_SIZE = 8 << 20;
 
@@ -88,10 +101,25 @@ export class StepExecutor {
         const message = await this.receiver.get();
         messages.push(message);
       }
-      await this.startSteps(messages);
-      return {
-        type: "executorBlocked",
-      };
+      const entries = await this.startSteps(messages);
+      for (const entry of entries) {
+        this.journalEntrySize += journalEntrySize(entry);
+        if (this.journalEntrySize > MAX_JOURNAL_SIZE) {
+          throw new Error(
+            journalSizeError(this.journalEntrySize, this.workflowId) +
+              ` The failing step was ${entry.step.name} (${entry._id})`,
+          );
+        }
+      }
+      const hasInProgress = entries.some((entry) => entry.step.inProgress);
+      if (hasInProgress) {
+        return {
+          type: "executorBlocked",
+        };
+      }
+      for (let i = 0; i < entries.length; i++) {
+        this.completeMessage(messages[i]!, entries[i]!);
+      }
     }
   }
 
@@ -115,12 +143,16 @@ export class StepExecutor {
         `Assertion failed: not blocked but have in-progress journal entry`,
       );
     }
-    const stepArgsJson = JSON.stringify(convexToJson(entry.step.args));
-    const messageArgsJson = JSON.stringify(convexToJson(message.args as Value));
-    if (stepArgsJson !== messageArgsJson) {
-      throw new Error(
-        `Journal entry mismatch: ${entry.step.args} !== ${message.args}`,
+    if (message.type !== "signal") {
+      const stepArgsJson = JSON.stringify(convexToJson(entry.step.args));
+      const messageArgsJson = JSON.stringify(
+        convexToJson(message.args as Value),
       );
+      if (stepArgsJson !== messageArgsJson) {
+        throw new Error(
+          `Journal entry mismatch: ${entry.step.args} !== ${message.args}`,
+        );
+      }
     }
     if (entry.step.runResult === undefined) {
       throw new Error(
@@ -161,7 +193,8 @@ export class StepExecutor {
             schedulerOptions: message.schedulerOptions,
             step,
           };
-        } else {
+        }
+        if (message.type === "pause") {
           const step = {
             type: "pause" as const,
             inProgress: true,
@@ -181,6 +214,22 @@ export class StepExecutor {
             step,
           };
         }
+        const signalStep = {
+          type: "signal" as const,
+          inProgress: true,
+          name: message.name,
+          signalId: message.signalHandle.signalId,
+          args: message.args,
+          argsSize: valueSize(message.args as Value),
+          runResult: undefined,
+          startedAt: this.now,
+          completedAt: undefined,
+        };
+        return {
+          retry: undefined,
+          schedulerOptions: undefined,
+          step: signalStep,
+        };
       }),
     );
     const entries = (await this.ctx.runMutation(
@@ -192,15 +241,6 @@ export class StepExecutor {
         workpoolOptions: this.workpoolOptions,
       },
     )) as JournalEntry[];
-    for (const entry of entries) {
-      this.journalEntrySize += journalEntrySize(entry);
-      if (this.journalEntrySize > MAX_JOURNAL_SIZE) {
-        throw new Error(
-          journalSizeError(this.journalEntrySize, this.workflowId) +
-            ` The failing step was ${entry.step.name} (${entry._id})`,
-        );
-      }
-    }
     return entries;
   }
 }

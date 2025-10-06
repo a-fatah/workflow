@@ -35,7 +35,7 @@ export const startTranscription = internalMutation({
   },
 });
 
-export const transcriptionWorkflow = workflow.define({
+export const { mutation: transcriptionWorkflow } = workflow.define({
   args: {
     storageId: v.id("_storage"),
   },

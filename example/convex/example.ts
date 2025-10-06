@@ -12,7 +12,7 @@ export const workflow = new WorkflowManager(components.workflow, {
   },
 });
 
-export const exampleWorkflow = workflow.define({
+export const { mutation: exampleWorkflow, signals } = workflow.define({
   args: {
     location: v.string(),
   },
