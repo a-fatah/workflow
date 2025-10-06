@@ -13,12 +13,13 @@ import {
   type RegisteredMutation,
   type ReturnValueForOptionalValidator,
 } from "convex/server";
-import type { ObjectType, PropertyValidators, Validator } from "convex/values";
-import type { Step } from "../component/schema.js";
+import type { ObjectType, PropertyValidators, Validator, Infer } from "convex/values";
+import type { Step, SignalDocument } from "../component/schema.js";
 import type { OnCompleteArgs, WorkflowId } from "../types.js";
 import { safeFunctionName } from "./safeFunctionName.js";
 import type { OpaqueIds, WorkflowComponent, WorkflowStep } from "./types.js";
 import { workflowMutation } from "./workflowMutation.js";
+import { validate } from "convex-helpers/validators";
 
 export { vWorkflowId, type WorkflowId } from "../types.js";
 export type { RunOptions } from "./types.js";
@@ -60,14 +61,34 @@ export type WorkflowDefinition<
   ReturnsValidator extends Validator<any, "required", any> | void = any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator> = any,
+  SignalsValidator extends PropertyValidators = {},
 > = {
   args?: ArgsValidator;
+  signals?: SignalsValidator;
   handler: (
-    step: WorkflowStep,
+    step: WorkflowStep<SignalsValidator>,
     args: ObjectType<ArgsValidator>,
   ) => Promise<ReturnValue>;
   returns?: ReturnsValidator;
   workpoolOptions?: WorkpoolRetryOptions;
+};
+
+export type DefinedWorkflow<
+  ArgsValidator extends PropertyValidators,
+  ReturnsValidator extends Validator<any, "required", any> | void,
+  ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
+  SignalsValidator extends PropertyValidators,
+> = {
+  _mutation: RegisteredMutation<"internal", ObjectType<ArgsValidator>, void>;
+  _signals: SignalsValidator;
+  _args: ArgsValidator;
+  signals: {
+    [K in keyof SignalsValidator]: {
+      resolve: (ctx: RunMutationCtx, signalId: string, value: Infer<SignalsValidator[K]>) => Promise<void>;
+      reject: (ctx: RunMutationCtx, signalId: string, error: string) => Promise<void>;
+      get: (ctx: RunQueryCtx, signalId: string) => Promise<OpaqueIds<SignalDocument> | null>;
+    };
+  };
 };
 
 export type WorkflowStatus =
@@ -88,35 +109,72 @@ export class WorkflowManager {
    * Define a new workflow.
    *
    * @param workflow - The workflow definition.
-   * @returns The workflow mutation.
+   * @returns The defined workflow with mutation and type-safe signal resolvers.
    */
   define<
     ArgsValidator extends PropertyValidators,
     ReturnsValidator extends Validator<unknown, "required", string> | void,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator> = any,
+    SignalsValidator extends PropertyValidators = {},
   >(
-    workflow: WorkflowDefinition<ArgsValidator, ReturnsValidator, ReturnValue>,
-  ): RegisteredMutation<"internal", ObjectType<ArgsValidator>, void> {
-    return workflowMutation(
+    workflow: WorkflowDefinition<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator>,
+  ): DefinedWorkflow<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator> {
+    const mutation = workflowMutation(
       this.component,
       workflow,
       this.options?.workpoolOptions,
     );
+
+    const signals = {} as any;
+    if (workflow.signals) {
+      for (const [signalName, validator] of Object.entries(workflow.signals)) {
+        signals[signalName] = {
+          resolve: async (ctx: RunMutationCtx, signalId: string, value: unknown) => {
+            validate(validator, value, { throw: true });
+            await ctx.runMutation(this.component.signals.resolve, {
+              signalId,
+              value,
+            });
+          },
+          reject: async (ctx: RunMutationCtx, signalId: string, error: string) => {
+            await ctx.runMutation(this.component.signals.reject, {
+              signalId,
+              error,
+            });
+          },
+          get: async (ctx: RunQueryCtx, signalId: string) => {
+            return await ctx.runQuery(this.component.signals.load, { signalId });
+          },
+        };
+      }
+    }
+
+    return {
+      _mutation: mutation,
+      _signals: workflow.signals as SignalsValidator,
+      _args: workflow.args as ArgsValidator,
+      signals,
+    };
   }
 
   /**
    * Kick off a defined workflow.
    *
    * @param ctx - The Convex context.
-   * @param workflow - The workflow to start (e.g. `internal.index.exampleWorkflow`).
+   * @param workflow - A FunctionReference to an exported workflow mutation (recommended) or a DefinedWorkflow object from workflow.define().
    * @param args - The workflow arguments.
    * @returns The workflow ID.
    */
-  async start<F extends FunctionReference<"mutation", "internal">>(
+  async start<
+    ArgsValidator extends PropertyValidators,
+    ReturnsValidator extends Validator<any, "required", any> | void,
+    ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
+    SignalsValidator extends PropertyValidators,
+  >(
     ctx: RunMutationCtx,
-    workflow: F,
-    args: FunctionArgs<F>,
+    workflow: DefinedWorkflow<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator> | FunctionReference<"mutation", "internal">,
+    args: ObjectType<ArgsValidator>,
     options?: CallbackOptions & {
       /**
        * By default, during creation the workflow will be initiated immediately.
@@ -134,7 +192,15 @@ export class WorkflowManager {
       validateAsync?: boolean;
     },
   ): Promise<WorkflowId> {
-    const handle = await createFunctionHandle(workflow);
+    let mutationRef: FunctionReference<"mutation", "internal">;
+    
+    if (this.isDefinedWorkflow(workflow)) {
+      mutationRef = workflow._mutation as any as FunctionReference<"mutation", "internal">;
+    } else {
+      mutationRef = workflow as FunctionReference<"mutation", "internal">;
+    }
+    
+    const handle = await createFunctionHandle(mutationRef);
     const onComplete = options?.onComplete
       ? {
           fnHandle: await createFunctionHandle(options.onComplete),
@@ -142,7 +208,7 @@ export class WorkflowManager {
         }
       : undefined;
     const workflowId = await ctx.runMutation(this.component.workflow.create, {
-      workflowName: safeFunctionName(workflow),
+      workflowName: safeFunctionName(mutationRef),
       workflowHandle: handle,
       workflowArgs: args,
       maxParallelism: this.options?.workpoolOptions?.maxParallelism,
@@ -150,6 +216,10 @@ export class WorkflowManager {
       startAsync: options?.startAsync ?? options?.validateAsync,
     });
     return workflowId as unknown as WorkflowId;
+  }
+
+  private isDefinedWorkflow(workflow: any): workflow is DefinedWorkflow<any, any, any, any> {
+    return workflow && typeof workflow === 'object' && '_mutation' in workflow;
   }
 
   /**
@@ -209,18 +279,21 @@ export class WorkflowManager {
    * Resume a paused workflow with a type-safe value.
    *
    * @param ctx - The Convex context.
-   * @param workflow - The workflow function reference for type safety.
+   * @param workflow - The defined workflow from workflow.define().
    * @param workflowId - The workflow ID.
    * @param resumeValue - The value to pass to the paused step.
    * @param opts - Options including the validator for type inference and optional step name.
    */
   async resume<
-    F extends FunctionReference<"mutation", "internal">,
+    ArgsValidator extends PropertyValidators,
+    ReturnsValidator extends Validator<any, "required", any> | void,
+    ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
+    SignalsValidator extends PropertyValidators,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     V extends Validator<any, "optional", any>,
   >(
     ctx: RunMutationCtx,
-    workflow: F,
+    workflow: DefinedWorkflow<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator>,
     workflowId: WorkflowId,
     resumeValue: unknown,
     opts?: {
@@ -228,7 +301,8 @@ export class WorkflowManager {
       name?: string;
     },
   ): Promise<void> {
-    const handle = await createFunctionHandle(workflow);
+    const mutationRef = workflow._mutation as any as FunctionReference<"mutation", "internal">;
+    const handle = await createFunctionHandle(mutationRef);
     await ctx.runMutation(this.component.journal.resume, {
       workflowHandle: handle,
       workflowId,

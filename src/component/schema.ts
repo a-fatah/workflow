@@ -7,6 +7,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { convexToJson, type Infer, v, type Value } from "convex/values";
 import { logLevel } from "./logging.js";
 import { deprecated, literals } from "convex-helpers/validators";
+import { vWorkflowId } from "../types.js";
 
 export function valueSize(value: Value): number {
   return JSON.stringify(convexToJson(value)).length;
@@ -85,10 +86,19 @@ const pauseStep = v.object({
   args: v.any(),
 });
 
-export const step = v.union(executionStep, pauseStep);
+const signalStep = v.object({
+  ...baseStepFields,
+  type: v.literal("signal"),
+  signalId: v.id("signals"),
+  argsSize: v.number(),
+  args: v.any(),
+});
+
+export const step = v.union(executionStep, pauseStep, signalStep);
 export type Step = Infer<typeof step>;
 export type ExecutionStep = Infer<typeof executionStep>;
 export type PauseStep = Infer<typeof pauseStep>;
+export type SignalStep = Infer<typeof signalStep>;
 
 function stepSize(step: Step): number {
   let size = 0;
@@ -106,9 +116,13 @@ function stepSize(step: Step): number {
     if (step.onPauseHandle) {
       size += step.onPauseHandle.length;
     }
+  } else if (step.type === "signal") {
+    size += step.signalId.length;
   }
   
-  size += 8 + step.argsSize;
+  if ("argsSize" in step) {
+    size += 8 + step.argsSize;
+  }
   if (step.runResult) {
     size += resultSize(step.runResult);
   }
@@ -122,6 +136,31 @@ const journalObject = {
   stepNumber: v.number(),
   step,
 };
+
+const signalState = literals("pending", "fulfilled", "rejected");
+
+export type SignalState = Infer<typeof signalState>;
+
+export const signalObject = {
+  workflowId: v.id("workflows"),
+  generationNumber: v.number(),
+  name: v.string(),
+  state: signalState,
+  value: v.optional(v.any()),
+  error: v.optional(v.string()),
+  validator: v.optional(v.any()),
+  metadata: v.optional(v.any()),
+  completedAt: v.optional(v.number()),
+  waitingStepId: v.optional(v.id("steps")),
+}
+
+export const signalDocument = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  ...signalObject,
+});
+
+export type SignalDocument = Infer<typeof signalDocument>;
 
 export function journalEntrySize(entry: JournalEntry): number {
   let size = 0;
@@ -149,6 +188,9 @@ export default defineSchema({
   steps: defineTable(journalObject)
     .index("workflow", ["workflowId", "stepNumber"])
     .index("inProgress", ["step.inProgress", "workflowId"]),
+  signals: defineTable(signalObject)
+    .index("workflow", ["workflowId", "state", "name"])
+    .index("state", ["state", "workflowId"]),
   onCompleteFailures: defineTable(
     v.union(
       v.object({

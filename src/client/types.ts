@@ -6,8 +6,9 @@ import type {
   FunctionReturnType,
 } from "convex/server";
 import type { api } from "../component/_generated/api.js";
-import type { GenericId, Validator } from "convex/values";
-import type { WorkflowId } from "../types.js";
+import type { GenericId, Validator, PropertyValidators, Infer } from "convex/values";
+import type { WorkflowId, SignalHandle } from "../types.js";
+import type { SignalDocument } from "../component/schema.js";
 
 export type WorkflowComponent = UseApi<typeof api>;
 
@@ -38,11 +39,60 @@ export type SchedulerOptions =
       runAfter?: number;
     };
 
-export type WorkflowStep = {
+export interface WorkflowSignalHelpers<SignalsValidator extends PropertyValidators = {}> {
+  create<K extends keyof SignalsValidator>(
+    name: K
+  ): Promise<SignalHandle<Infer<SignalsValidator[K]>>>;
+  create<Returns>(
+    name: string,
+    config: { returns: Validator<Returns, any, any> }
+  ): Promise<SignalHandle<Returns>>;
+  resolve: <Returns>(handle: SignalHandle<Returns>, value: Returns) => Promise<void>;
+  reject: (handle: SignalHandle<unknown>, error: string) => Promise<void>;
+  load: (handle: SignalHandle<unknown>) => Promise<SignalDocument>;
+  awaitSignal: <Returns>(handle: SignalHandle<Returns>) => Promise<Returns>;
+  all: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles) => Promise<{ [K in keyof Handles]: SignalValue<Handles[K]> }>;
+  race: <Handles extends SignalHandle<any>[]>(handles: Handles, options?: SignalRaceOptions) => Promise<SignalRaceResult<Handles>>;
+  any: <Handles extends SignalHandle<any>[]>(handles: Handles, options: SignalAnyOptions) => Promise<SignalAnyResult<Handles>>;
+}
+
+export interface SignalCreateConfig<Returns> {
+  name: string;
+  returns: Validator<Returns, "required">;
+  metadata?: unknown;
+  validator?: unknown;
+}
+
+export type SignalValue<Handle extends SignalHandle<any>> = Handle extends SignalHandle<infer T>
+  ? T
+  : never;
+
+export interface SignalRaceOptions {
+  timeoutMs?: number;
+}
+
+export type SignalRaceResult<Handles extends SignalHandle<any>[]> = {
+  handle: Handles[number];
+  value: SignalValue<Handles[number]> | undefined;
+};
+
+export interface SignalAnyOptions {
+  min: number;
+  timeoutMs?: number;
+}
+
+export type SignalAnyResult<Handles extends SignalHandle<any>[]> = {
+  resolved: Array<{
+    handle: Handles[number];
+    value: SignalValue<Handles[number]> | undefined;
+  }>;
+};
+export type WorkflowStep<SignalsValidator extends PropertyValidators = {}> = {
   /**
    * The ID of the workflow currently running.
    */
   workflowId: WorkflowId;
+  signals: WorkflowSignalHelpers<SignalsValidator>;
   /**
    * Run a query with the given name and arguments.
    *
