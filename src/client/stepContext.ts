@@ -9,6 +9,7 @@ import type {
   GenericDataModel,
 } from "convex/server";
 import type { Validator, PropertyValidators, Infer } from "convex/values";
+import { convexToJson } from "convex/values";
 import { safeFunctionName } from "./safeFunctionName.js";
 import type { StepRequest, ExecutionStepRequest } from "./step.js";
 import type { RetryOption } from "@convex-dev/workpool";
@@ -82,11 +83,14 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
       throw new Error(`Signal "${String(name)}" not found in workflow signals schema`);
     }
     const validator = this.signalsSchema[name];
+    // Convert validator to JSON-serializable format
+    // Use JSON.parse(JSON.stringify()) to strip out undefined values and non-serializable properties
+    const validatorJson = JSON.parse(JSON.stringify(validator));
     return await this.ctx.runMutation(this.component.signals.create, {
       workflowId: this.workflowId,
       generationNumber: this.generationNumber,
       name: String(name),
-      validator,
+      validator: validatorJson,
     }) as SignalHandle<Infer<SignalsValidator[K]>>;
   }
 

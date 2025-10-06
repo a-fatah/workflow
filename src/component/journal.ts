@@ -144,6 +144,13 @@ export const startSteps = mutation({
               { context, onComplete, name: step.name, ...schedulerOptions },
             );
           }
+        } else if (step.type === "signal") {
+          // Update signal with waiting step ID so it can resume workflow when resolved
+          const signal = await ctx.db.get(step.signalId);
+          if (signal && signal.state === "pending") {
+            signal.waitingStepId = stepId;
+            await ctx.db.replace(step.signalId, signal);
+          }
         }
         
         if (workId) {
