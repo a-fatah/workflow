@@ -11,6 +11,7 @@
 import type * as admin from "../admin.js";
 import type * as example from "../example.js";
 import type * as signalTest from "../signalTest.js";
+import type * as signalTimeoutTest from "../signalTimeoutTest.js";
 import type * as subscriptionTrial from "../subscriptionTrial.js";
 import type * as transcription from "../transcription.js";
 
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   example: typeof example;
   signalTest: typeof signalTest;
+  signalTimeoutTest: typeof signalTimeoutTest;
   subscriptionTrial: typeof subscriptionTrial;
   transcription: typeof transcription;
 }>;
@@ -101,6 +103,8 @@ export declare const components: {
                     | { kind: "canceled" };
                   signalId: string;
                   startedAt: number;
+                  timeoutMs?: number;
+                  timeoutScheduledAt?: number;
                   type: "signal";
                   workId?: string;
                 };
@@ -192,6 +196,8 @@ export declare const components: {
                     | { kind: "canceled" };
                   signalId: string;
                   startedAt: number;
+                  timeoutMs?: number;
+                  timeoutScheduledAt?: number;
                   type: "signal";
                   workId?: string;
                 };
@@ -255,6 +261,8 @@ export declare const components: {
                   | { kind: "canceled" };
                 signalId: string;
                 startedAt: number;
+                timeoutMs?: number;
+                timeoutScheduledAt?: number;
                 type: "signal";
                 workId?: string;
               };
@@ -404,6 +412,8 @@ export declare const components: {
                     | { kind: "canceled" };
                   signalId: string;
                   startedAt: number;
+                  timeoutMs?: number;
+                  timeoutScheduledAt?: number;
                   type: "signal";
                   workId?: string;
                 };

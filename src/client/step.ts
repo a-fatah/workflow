@@ -51,6 +51,7 @@ export type SignalAwaitRequest = {
   name: string;
   signalHandle: SignalHandle<unknown>;
   args: { signalId: string };
+  timeoutMs?: number;
   resolve: (result: unknown) => void;
   reject: (error: unknown) => void;
 };
@@ -224,6 +225,8 @@ export class StepExecutor {
           runResult: undefined,
           startedAt: this.now,
           completedAt: undefined,
+          timeoutMs: message.timeoutMs,
+          timeoutScheduledAt: undefined,
         };
         return {
           retry: undefined,

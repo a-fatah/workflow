@@ -11,6 +11,7 @@ export const componentModules = import.meta.glob(
   "../../node_modules/@convex-dev/workflow/src/component/**/*.ts",
 );
 
+
 export function initConvexTest() {
   const t = convexTest(schema, modules);
   t.registerComponent("bigPool", componentSchema, componentModules);

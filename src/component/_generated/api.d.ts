@@ -93,6 +93,8 @@ export type Mounts = {
                   | { kind: "canceled" };
                 signalId: string;
                 startedAt: number;
+                timeoutMs?: number;
+                timeoutScheduledAt?: number;
                 type: "signal";
                 workId?: string;
               };
@@ -184,6 +186,8 @@ export type Mounts = {
                   | { kind: "canceled" };
                 signalId: string;
                 startedAt: number;
+                timeoutMs?: number;
+                timeoutScheduledAt?: number;
                 type: "signal";
                 workId?: string;
               };
@@ -247,6 +251,8 @@ export type Mounts = {
                 | { kind: "canceled" };
               signalId: string;
               startedAt: number;
+              timeoutMs?: number;
+              timeoutScheduledAt?: number;
               type: "signal";
               workId?: string;
             };
@@ -396,6 +402,8 @@ export type Mounts = {
                   | { kind: "canceled" };
                 signalId: string;
                 startedAt: number;
+                timeoutMs?: number;
+                timeoutScheduledAt?: number;
                 type: "signal";
                 workId?: string;
               };

@@ -50,7 +50,10 @@ export interface WorkflowSignalHelpers<SignalsValidator extends PropertyValidato
   resolve: <Returns>(handle: SignalHandle<Returns>, value: Returns) => Promise<void>;
   reject: (handle: SignalHandle<unknown>, error: string) => Promise<void>;
   load: (handle: SignalHandle<unknown>) => Promise<SignalDocument>;
-  awaitSignal: <Returns>(handle: SignalHandle<Returns>) => Promise<Returns>;
+  awaitSignal: <Returns>(
+    handle: SignalHandle<Returns>,
+    options?: { timeoutMs?: number }
+  ) => Promise<Returns>;
   all: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles) => Promise<{ [K in keyof Handles]: SignalValue<Handles[K]> }>;
   race: <Handles extends SignalHandle<any>[]>(handles: Handles, options?: SignalRaceOptions) => Promise<SignalRaceResult<Handles>>;
   any: <Handles extends SignalHandle<any>[]>(handles: Handles, options: SignalAnyOptions) => Promise<SignalAnyResult<Handles>>;

@@ -151,6 +151,25 @@ export const startSteps = mutation({
             signal.waitingStepId = stepId;
             await ctx.db.replace(step.signalId, signal);
           }
+          
+          // Schedule timeout if specified
+          if (step.timeoutMs) {
+            workId = await workpool.enqueueMutation(
+              ctx,
+              internal.signals.handleTimeout as FunctionHandle<"mutation">,
+              { stepId, signalId: step.signalId },
+              {
+                name: `timeout:${step.name}`,
+                runAfter: step.timeoutMs,
+                onComplete: internal.pool.onComplete,
+                context,
+              }
+            );
+            if (entry.step.type === "signal") {
+              entry.step.timeoutScheduledAt = Date.now();
+              await ctx.db.replace(entry._id, entry);
+            }
+          }
         }
         
         if (workId) {

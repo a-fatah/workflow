@@ -2,7 +2,7 @@ import { assert } from "convex-helpers";
 import { validate, ValidationError } from "convex-helpers/validators";
 import { v } from "convex/values";
 import type { FunctionHandle } from "convex/server";
-import { mutation, query, type MutationCtx } from "./_generated/server.js";
+import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server.js";
 import { getWorkflow } from "./model.js";
 import { getWorkpool } from "./pool.js";
 import { getDefaultLogger } from "./utils.js";
@@ -196,6 +196,54 @@ async function resumeWorkflow(ctx: MutationCtx, signal: SignalDocument) {
     },
   );
 }
+
+export const handleTimeout = internalMutation({
+  args: {
+    stepId: v.id("steps"),
+    signalId: v.id("signals"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const signal = await ctx.db.get(args.signalId);
+    
+    if (!signal || signal.state !== "pending") {
+      return;
+    }
+    
+    const step = await ctx.db.get(args.stepId);
+    if (!step || !step.step.inProgress) {
+      return;
+    }
+    
+    const timeoutMs = step.step.type === "signal" ? step.step.timeoutMs : undefined;
+    const errorMessage = timeoutMs 
+      ? `Signal timed out after ${timeoutMs}ms`
+      : "Signal timed out";
+    
+    signal.state = "rejected";
+    signal.error = errorMessage;
+    signal.completedAt = Date.now();
+    
+    const hadWaitingStep = await completeWaitingStep(
+      ctx,
+      signal.waitingStepId,
+      {
+        kind: "failed",
+        error: errorMessage,
+      }
+    );
+    
+    if (hadWaitingStep) {
+      signal.waitingStepId = undefined;
+    }
+    
+    await ctx.db.replace(args.signalId, signal);
+    
+    if (hadWaitingStep) {
+      await resumeWorkflow(ctx, signal);
+    }
+  },
+});
 
 async function completeWaitingStep(
   ctx: MutationCtx,

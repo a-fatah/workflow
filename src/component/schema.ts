@@ -92,6 +92,8 @@ const signalStep = v.object({
   signalId: v.id("signals"),
   argsSize: v.number(),
   args: v.any(),
+  timeoutMs: v.optional(v.number()),
+  timeoutScheduledAt: v.optional(v.number()),
 });
 
 export const step = v.union(executionStep, pauseStep, signalStep);

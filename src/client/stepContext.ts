@@ -57,8 +57,8 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
           signalId: handle.signalId,
         }) as any;
       },
-      awaitSignal: async (handle) => {
-        return this.runSignalAwait(handle);
+      awaitSignal: async (handle, options) => {
+        return this.runSignalAwait(handle, options);
       },
       all: async (handles) => {
         const results: any = {};
@@ -106,7 +106,10 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
     }) as SignalHandle<T>;
   }
 
-  private async runSignalAwait<T>(handle: SignalHandle<T>): Promise<T> {
+  private async runSignalAwait<T>(
+    handle: SignalHandle<T>,
+    options?: { timeoutMs?: number }
+  ): Promise<T> {
     let send: unknown;
     const p = new Promise<T>((resolve, reject) => {
       send = this.sender.push({
@@ -114,6 +117,7 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
         name: handle.name,
         signalHandle: handle,
         args: { signalId: handle.signalId },
+        timeoutMs: options?.timeoutMs,
         resolve: resolve as (result: unknown) => void,
         reject,
       });
