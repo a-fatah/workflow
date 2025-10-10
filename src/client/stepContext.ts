@@ -8,15 +8,14 @@ import type {
   GenericMutationCtx,
   GenericDataModel,
 } from "convex/server";
-import type { Validator, PropertyValidators, Infer } from "convex/values";
-import { convexToJson } from "convex/values";
+import type { Validator } from "convex/values";
 import { safeFunctionName } from "./safeFunctionName.js";
 import type { StepRequest, ExecutionStepRequest } from "./step.js";
 import type { RetryOption } from "@convex-dev/workpool";
-import type { RunOptions, WorkflowStep, WorkflowSignalHelpers, WorkflowComponent } from "./types.js";
+import type { RunOptions, WorkflowStep, WorkflowSignalHelpers, WorkflowComponent, SignalsDefinition, ExtractReturns, ExtractMetadata } from "./types.js";
 import type { WorkflowId, SignalHandle } from "../types.js";
 
-export class StepContext<SignalsValidator extends PropertyValidators = {}> implements WorkflowStep<SignalsValidator> {
+export class StepContext<SignalsValidator extends SignalsDefinition = SignalsDefinition> implements WorkflowStep<SignalsValidator> {
   signals: WorkflowSignalHelpers<SignalsValidator>;
 
   constructor(
@@ -75,25 +74,32 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
       any: async (handles, options) => {
         return this.runSignalAny(handles, options);
       },
+      updateMetadata: async (handle, metadata) => {
+        await this.ctx.runMutation(this.component.signals.updateMetadata, {
+          signalId: handle.signalId,
+          metadata,
+        });
+      },
     };
   }
 
   private async createPreDeclaredSignal<K extends keyof SignalsValidator>(
     name: K
-  ): Promise<SignalHandle<Infer<SignalsValidator[K]>>> {
+  ): Promise<SignalHandle<ExtractReturns<SignalsValidator[K]>, ExtractMetadata<SignalsValidator[K]>>> {
     if (!this.signalsSchema || !(name in this.signalsSchema)) {
       throw new Error(`Signal "${String(name)}" not found in workflow signals schema`);
     }
-    const validator = this.signalsSchema[name];
-    // Convert validator to JSON-serializable format
-    // Use JSON.parse(JSON.stringify()) to strip out undefined values and non-serializable properties
+    const signalDef = this.signalsSchema[name];
+    const validator = typeof signalDef === 'object' && signalDef !== null && 'returns' in signalDef
+      ? signalDef.returns
+      : signalDef;
     const validatorJson = JSON.parse(JSON.stringify(validator));
     return await this.ctx.runMutation(this.component.signals.create, {
       workflowId: this.workflowId,
       generationNumber: this.generationNumber,
       name: String(name),
       validator: validatorJson,
-    }) as SignalHandle<Infer<SignalsValidator[K]>>;
+    }) as SignalHandle<ExtractReturns<SignalsValidator[K]>, ExtractMetadata<SignalsValidator[K]>>;
   }
 
   private async createDynamicSignal<T>(

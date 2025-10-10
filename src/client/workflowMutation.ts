@@ -21,7 +21,7 @@ import { StepExecutor, type StepRequest, type WorkerResult } from "./step.js";
 import { StepContext } from "./stepContext.js";
 import { checkArgs } from "./validator.js";
 import { type RunResult, type WorkpoolOptions } from "@convex-dev/workpool";
-import { type WorkflowComponent } from "./types.js";
+import { type WorkflowComponent, type SignalsDefinition } from "./types.js";
 import { vWorkflowId } from "../types.js";
 import { formatErrorWithStack } from "../shared.js";
 
@@ -39,7 +39,7 @@ export function workflowMutation<
   ArgsValidator extends PropertyValidators,
   ReturnsValidator extends Validator<any, "required", any> | void = any,
   ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator> = any,
-  SignalsValidator extends PropertyValidators = {},
+  SignalsValidator extends SignalsDefinition = SignalsDefinition,
 >(
   component: WorkflowComponent,
   registered: WorkflowDefinition<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator>,

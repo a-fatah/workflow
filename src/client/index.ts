@@ -17,12 +17,12 @@ import type { ObjectType, PropertyValidators, Validator, Infer } from "convex/va
 import type { Step, SignalDocument } from "../component/schema.js";
 import type { OnCompleteArgs, WorkflowId } from "../types.js";
 import { safeFunctionName } from "./safeFunctionName.js";
-import type { OpaqueIds, WorkflowComponent, WorkflowStep } from "./types.js";
+import type { OpaqueIds, WorkflowComponent, WorkflowStep, SignalDefinition, ExtractReturns, ExtractMetadata } from "./types.js";
 import { workflowMutation } from "./workflowMutation.js";
 import { validate } from "convex-helpers/validators";
 
 export { vWorkflowId, type WorkflowId } from "../types.js";
-export type { RunOptions } from "./types.js";
+export type { RunOptions, SignalDefinition } from "./types.js";
 
 export type CallbackOptions = {
   /**
@@ -61,7 +61,7 @@ export type WorkflowDefinition<
   ReturnsValidator extends Validator<any, "required", any> | void = any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator> = any,
-  SignalsValidator extends PropertyValidators = {},
+  SignalsValidator extends Record<string, any> = Record<string, any>,
 > = {
   args?: ArgsValidator;
   signals?: SignalsValidator;
@@ -77,16 +77,29 @@ export type DefinedWorkflow<
   ArgsValidator extends PropertyValidators,
   ReturnsValidator extends Validator<any, "required", any> | void,
   ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
-  SignalsValidator extends PropertyValidators,
+  SignalsValidator extends Record<string, any>,
 > = {
   mutation: RegisteredMutation<"internal", ObjectType<ArgsValidator>, void>;
   _signals?: SignalsValidator;
   _args?: ArgsValidator;
   signals?: {
     [K in keyof SignalsValidator]: {
-      resolve: (ctx: RunMutationCtx, signalId: string, value: Infer<SignalsValidator[K]>) => Promise<void>;
+      resolve: (
+        ctx: RunMutationCtx, 
+        signalId: string, 
+        value: SignalsValidator[K] extends SignalDefinition 
+          ? ExtractReturns<SignalsValidator[K]> 
+          : Infer<SignalsValidator[K]>
+      ) => Promise<void>;
       reject: (ctx: RunMutationCtx, signalId: string, error: string) => Promise<void>;
       get: (ctx: RunQueryCtx, signalId: string) => Promise<OpaqueIds<SignalDocument> | null>;
+      updateMetadata: (
+        ctx: RunMutationCtx,
+        signalId: string,
+        metadata: SignalsValidator[K] extends SignalDefinition
+          ? ExtractMetadata<SignalsValidator[K]>
+          : any
+      ) => Promise<void>;
     };
   };
 };
@@ -116,7 +129,7 @@ export class WorkflowManager {
     ReturnsValidator extends Validator<unknown, "required", string> | void,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator> = any,
-    SignalsValidator extends PropertyValidators = {},
+    SignalsValidator extends Record<string, any> = Record<string, any>,
   >(
     workflow: WorkflowDefinition<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator>,
   ): DefinedWorkflow<ArgsValidator, ReturnsValidator, ReturnValue, SignalsValidator> {
@@ -128,10 +141,19 @@ export class WorkflowManager {
 
     const signals = {} as any;
     if (workflow.signals) {
-      for (const [signalName, validator] of Object.entries(workflow.signals)) {
+      for (const [signalName, signalDef] of Object.entries(workflow.signals)) {
+        const validator = typeof signalDef === 'object' && signalDef !== null && 'returns' in signalDef 
+          ? signalDef.returns 
+          : signalDef;
+        const metadataValidator = typeof signalDef === 'object' && signalDef !== null && 'metadata' in signalDef
+          ? signalDef.metadata
+          : undefined;
+
         signals[signalName] = {
           resolve: async (ctx: RunMutationCtx, signalId: string, value: unknown) => {
-            validate(validator, value, { throw: true });
+            if (validator) {
+              validate(validator as any, value, { throw: true });
+            }
             await ctx.runMutation(this.component.signals.resolve, {
               signalId,
               value,
@@ -145,6 +167,15 @@ export class WorkflowManager {
           },
           get: async (ctx: RunQueryCtx, signalId: string) => {
             return await ctx.runQuery(this.component.signals.load, { signalId });
+          },
+          updateMetadata: async (ctx: RunMutationCtx, signalId: string, metadata: unknown) => {
+            if (metadataValidator) {
+              validate(metadataValidator as any, metadata, { throw: true });
+            }
+            await ctx.runMutation(this.component.signals.updateMetadata, {
+              signalId,
+              metadata,
+            });
           },
         };
       }
@@ -170,7 +201,7 @@ export class WorkflowManager {
     ArgsValidator extends PropertyValidators,
     ReturnsValidator extends Validator<any, "required", any> | void,
     ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
-    SignalsValidator extends PropertyValidators,
+    SignalsValidator extends Record<string, any>,
   >(
     ctx: RunMutationCtx,
     workflow: FunctionReference<"mutation", "internal">,
@@ -288,7 +319,7 @@ export class WorkflowManager {
     ArgsValidator extends PropertyValidators,
     ReturnsValidator extends Validator<any, "required", any> | void,
     ReturnValue extends ReturnValueForOptionalValidator<ReturnsValidator>,
-    SignalsValidator extends PropertyValidators,
+    SignalsValidator extends Record<string, any>,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     V extends Validator<any, "optional", any>,
   >(

@@ -19,12 +19,13 @@ export type OnCompleteArgs = {
   result: RunResult;
 };
 
-export type SignalHandle<Returns = unknown> = {
+export type SignalHandle<Returns = unknown, Metadata = any> = {
   signalId: string;
   workflowId: string;
   generationNumber: number;
   name: string;
   __returns?: Returns;
+  __metadata?: Metadata;
 };
 
 export const vSignalHandle = v.object({

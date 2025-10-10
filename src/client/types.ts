@@ -6,7 +6,7 @@ import type {
   FunctionReturnType,
 } from "convex/server";
 import type { api } from "../component/_generated/api.js";
-import type { GenericId, Validator, PropertyValidators, Infer } from "convex/values";
+import type { GenericId, Validator } from "convex/values";
 import type { WorkflowId, SignalHandle } from "../types.js";
 import type { SignalDocument } from "../component/schema.js";
 
@@ -39,10 +39,25 @@ export type SchedulerOptions =
       runAfter?: number;
     };
 
-export interface WorkflowSignalHelpers<SignalsValidator extends PropertyValidators = {}> {
+export type SignalDefinition<T = any, M = any> = 
+  | Validator<T>
+  | {
+      returns: Validator<T, any, any>;
+      metadata?: Validator<M, any, any>;
+    };
+
+export type SignalsDefinition = Record<string, SignalDefinition>;
+
+export type ExtractReturns<SD extends SignalDefinition> = 
+  SD extends Validator<infer T> ? T : SD extends { returns: Validator<infer T, any, any> } ? T : never;
+
+export type ExtractMetadata<SD extends SignalDefinition> = 
+  SD extends { metadata?: Validator<infer M, any, any> } ? M : any;
+
+export interface WorkflowSignalHelpers<SignalsValidator extends SignalsDefinition = SignalsDefinition> {
   create<K extends keyof SignalsValidator>(
     name: K
-  ): Promise<SignalHandle<Infer<SignalsValidator[K]>>>;
+  ): Promise<SignalHandle<ExtractReturns<SignalsValidator[K]>, ExtractMetadata<SignalsValidator[K]>>>;
   create<Returns>(
     name: string,
     config: { returns: Validator<Returns, any, any> }
@@ -58,6 +73,7 @@ export interface WorkflowSignalHelpers<SignalsValidator extends PropertyValidato
   all: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles) => Promise<{ [K in keyof Handles]: SignalValue<Handles[K]> }>;
   race: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles, options?: SignalRaceOptions) => Promise<SignalRaceResult<Handles>>;
   any: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles, options: SignalAnyOptions) => Promise<SignalAnyResult<Handles>>;
+  updateMetadata: <Returns, Metadata>(handle: SignalHandle<Returns, Metadata>, metadata: Metadata) => Promise<void>;
 }
 
 export interface SignalCreateConfig<Returns> {
@@ -91,7 +107,7 @@ export type SignalAnyResult<Handles extends Record<string, SignalHandle<any>>> =
     value: SignalValue<Handles[keyof Handles]>;
   }>;
 };
-export type WorkflowStep<SignalsValidator extends PropertyValidators = {}> = {
+export type WorkflowStep<SignalsValidator extends SignalsDefinition = SignalsDefinition> = {
   /**
    * The ID of the workflow currently running.
    */

@@ -226,6 +226,29 @@ export const cancel = mutation({
   },
 });
 
+export const updateMetadata = mutation({
+  args: {
+    signalId: v.id("signals"),
+    metadata: v.any(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const signal = await ctx.db.get(args.signalId);
+    assert(signal, `Signal not found: ${args.signalId}`);
+    
+    signal.metadata = args.metadata;
+    await ctx.db.replace(args.signalId, signal);
+    
+    const console = await getDefaultLogger(ctx);
+    console.event("signalMetadataUpdated", {
+      workflowId: signal.workflowId,
+      signalId: signal._id,
+      signalName: signal.name,
+      state: signal.state,
+    });
+  },
+});
+
 async function cancelTimeoutWork(ctx: MutationCtx, waitingStepId: Id<"steps"> | undefined) {
   if (!waitingStepId) {
     return;
