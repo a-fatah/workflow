@@ -392,6 +392,60 @@ export const exampleWorkflow = workflow.define({
 });
 ```
 
+### Coordinating multiple signals
+
+The workflow component provides powerful helpers for coordinating multiple signals:
+- `ctx.signals.all()` - Wait for all signals to complete (fail-fast on rejection)
+- `ctx.signals.race()` - First signal to complete wins
+- `ctx.signals.any()` - Wait for at least N signals to succeed
+
+```ts
+export const { mutation: orderWorkflow, signals } = workflow.define({
+  args: { orderId: v.string() },
+  signals: {
+    payment: v.object({ transactionId: v.string() }),
+    inventory: v.object({ available: v.boolean() }),
+    shipping: v.object({ trackingNumber: v.string() }),
+  },
+
+  async handler(ctx, args) {
+    const payment = await ctx.signals.create("payment");
+    const inventory = await ctx.signals.create("inventory");
+    const shipping = await ctx.signals.create("shipping");
+
+    // Wait for all three - fails fast if any rejects
+    const results = await ctx.signals.all({
+      payment,
+      inventory,
+      shipping,
+    });
+
+    // Or race multiple options - first wins
+    const { winnerKey, value } = await ctx.signals.race({
+      email: emailSignal,
+      sms: smsSignal,
+    }, { timeoutMs: 30000 });
+
+    // Or wait for at least 2 out of 3
+    const { resolved } = await ctx.signals.any({
+      provider1: signal1,
+      provider2: signal2,
+      provider3: signal3,
+    }, { min: 2 });
+
+    return results;
+  },
+});
+```
+
+**Key Benefits:**
+- 🔄 Automatic cancellation of losing/remaining signals
+- ⏱️ Proper timeout work cleanup
+- 📢 Explicit feedback to external systems
+- 🎯 Type-safe results
+
+See [SIGNAL_AGGREGATION_HELPERS.md](./SIGNAL_AGGREGATION_HELPERS.md) for comprehensive documentation.
+
 ## Tips and troubleshooting
 
 ### Circular dependencies

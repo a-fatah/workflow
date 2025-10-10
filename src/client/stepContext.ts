@@ -67,17 +67,13 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
         return this.runSignalAwait(handle, options);
       },
       all: async (handles) => {
-        const results: any = {};
-        for (const [key, handle] of Object.entries(handles)) {
-          results[key] = await this.runSignalAwait(handle);
-        }
-        return results;
+        return this.runSignalAll(handles);
       },
       race: async (handles, options) => {
-        throw new Error("signal.race not yet implemented");
+        return this.runSignalRace(handles, options);
       },
       any: async (handles, options) => {
-        throw new Error("signal.any not yet implemented");
+        return this.runSignalAny(handles, options);
       },
     };
   }
@@ -124,6 +120,65 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
         signalHandle: handle,
         args: { signalId: handle.signalId },
         timeoutMs: options?.timeoutMs,
+        resolve: resolve as (result: unknown) => void,
+        reject,
+      });
+    });
+    void send;
+    return p;
+  }
+
+  private async runSignalRace<Handles extends Record<string, SignalHandle<any>>>(
+    handles: Handles,
+    options?: { timeoutMs?: number }
+  ): Promise<{ winnerKey: keyof Handles; value: any }> {
+    let send: unknown;
+    const p = new Promise<{ winnerKey: keyof Handles; value: any }>((resolve, reject) => {
+      send = this.sender.push({
+        type: "signalRace" as const,
+        name: `race(${Object.keys(handles).join(",")})`,
+        handles,
+        args: { handles: Object.fromEntries(Object.entries(handles).map(([k, h]) => [k, h.signalId])) },
+        timeoutMs: options?.timeoutMs,
+        resolve: resolve as (result: unknown) => void,
+        reject,
+      });
+    });
+    void send;
+    return p;
+  }
+
+  private async runSignalAll<Handles extends Record<string, SignalHandle<any>>>(
+    handles: Handles
+  ): Promise<{ [K in keyof Handles]: any }> {
+    let send: unknown;
+    const p = new Promise<{ [K in keyof Handles]: any }>((resolve, reject) => {
+      send = this.sender.push({
+        type: "signalAll" as const,
+        name: `all(${Object.keys(handles).join(",")})`,
+        handles,
+        args: { handles: Object.fromEntries(Object.entries(handles).map(([k, h]) => [k, h.signalId])) },
+        resolve: resolve as (result: unknown) => void,
+        reject,
+      });
+    });
+    void send;
+    return p;
+  }
+
+  private async runSignalAny<Handles extends Record<string, SignalHandle<any>>>(
+    handles: Handles,
+    options: { min?: number; timeoutMs?: number }
+  ): Promise<{ resolved: Array<{ key: keyof Handles; value: any }> }> {
+    let send: unknown;
+    const p = new Promise<{ resolved: Array<{ key: keyof Handles; value: any }> }>((resolve, reject) => {
+      send = this.sender.push({
+        type: "signalAny" as const,
+        name: `any(${Object.keys(handles).join(",")})`,
+        handles,
+        args: { handles: Object.fromEntries(Object.entries(handles).map(([k, h]) => [k, h.signalId])), min: options.min },
+        timeoutMs: options?.timeoutMs,
+        min: options.min,
         resolve: resolve as (result: unknown) => void,
         reject,
       });

@@ -56,10 +56,43 @@ export type SignalAwaitRequest = {
   reject: (error: unknown) => void;
 };
 
+export type SignalAllRequest = {
+  type: "signalAll";
+  name: string;
+  handles: Record<string, SignalHandle<unknown>>;
+  args: { handles: Record<string, string> };
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+};
+
+export type SignalRaceRequest = {
+  type: "signalRace";
+  name: string;
+  handles: Record<string, SignalHandle<unknown>>;
+  args: { handles: Record<string, string> };
+  timeoutMs?: number;
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+};
+
+export type SignalAnyRequest = {
+  type: "signalAny";
+  name: string;
+  handles: Record<string, SignalHandle<unknown>>;
+  args: { handles: Record<string, string>; min?: number };
+  timeoutMs?: number;
+  min?: number;
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+};
+
 export type StepRequest =
   | ExecutionStepRequest
   | PauseStepRequest
-  | SignalAwaitRequest;
+  | SignalAwaitRequest
+  | SignalAllRequest
+  | SignalRaceRequest
+  | SignalAnyRequest;
 
 const MAX_JOURNAL_SIZE = 8 << 20;
 
@@ -144,7 +177,7 @@ export class StepExecutor {
         `Assertion failed: not blocked but have in-progress journal entry`,
       );
     }
-    if (message.type !== "signal") {
+    if (message.type !== "signal" && message.type !== "signalAll" && message.type !== "signalRace" && message.type !== "signalAny") {
       const stepArgsJson = JSON.stringify(convexToJson(entry.step.args));
       const messageArgsJson = JSON.stringify(
         convexToJson(message.args as Value),
@@ -215,24 +248,113 @@ export class StepExecutor {
             step,
           };
         }
-        const signalStep = {
-          type: "signal" as const,
-          inProgress: true,
-          name: message.name,
-          signalId: message.signalHandle.signalId,
-          args: message.args,
-          argsSize: valueSize(message.args as Value),
-          runResult: undefined,
-          startedAt: this.now,
-          completedAt: undefined,
-          timeoutMs: message.timeoutMs,
-          timeoutScheduledAt: undefined,
-        };
-        return {
-          retry: undefined,
-          schedulerOptions: undefined,
-          step: signalStep,
-        };
+        if (message.type === "signal") {
+          const signalStep = {
+            type: "signal" as const,
+            inProgress: true,
+            name: message.name,
+            signalId: message.signalHandle.signalId,
+            args: message.args,
+            argsSize: valueSize(message.args as Value),
+            runResult: undefined,
+            startedAt: this.now,
+            completedAt: undefined,
+            timeoutMs: message.timeoutMs,
+            timeoutScheduledAt: undefined,
+          };
+          return {
+            retry: undefined,
+            schedulerOptions: undefined,
+            step: signalStep,
+          };
+        }
+        if (message.type === "signalAll") {
+          const groupId = `all_${this.now}_${Math.random()}`;
+          const signalIds = Object.values(message.handles).map(h => h.signalId);
+          const signalKeyMap = Object.fromEntries(
+            Object.entries(message.handles).map(([key, handle]) => [handle.signalId, key])
+          );
+          const signalStep = {
+            type: "signal" as const,
+            inProgress: true,
+            name: message.name,
+            signalId: signalIds[0]!,
+            args: message.args,
+            argsSize: valueSize(message.args as Value),
+            runResult: undefined,
+            startedAt: this.now,
+            completedAt: undefined,
+            helperType: "all" as const,
+            groupId,
+            groupMembers: signalIds as any[],
+            signalKeyMap,
+          };
+          return {
+            retry: undefined,
+            schedulerOptions: undefined,
+            step: signalStep,
+          };
+        }
+        if (message.type === "signalRace") {
+          const groupId = `race_${this.now}_${Math.random()}`;
+          const signalIds = Object.values(message.handles).map(h => h.signalId);
+          const signalKeyMap = Object.fromEntries(
+            Object.entries(message.handles).map(([key, handle]) => [handle.signalId, key])
+          );
+          const signalStep = {
+            type: "signal" as const,
+            inProgress: true,
+            name: message.name,
+            signalId: signalIds[0]!,
+            args: message.args,
+            argsSize: valueSize(message.args as Value),
+            runResult: undefined,
+            startedAt: this.now,
+            completedAt: undefined,
+            timeoutMs: message.timeoutMs,
+            timeoutScheduledAt: undefined,
+            helperType: "race" as const,
+            groupId,
+            groupMembers: signalIds as any[],
+            signalKeyMap,
+          };
+          return {
+            retry: undefined,
+            schedulerOptions: undefined,
+            step: signalStep,
+          };
+        }
+        if (message.type === "signalAny") {
+          const groupId = `any_${this.now}_${Math.random()}`;
+          const signalIds = Object.values(message.handles).map(h => h.signalId);
+          const signalKeyMap = Object.fromEntries(
+            Object.entries(message.handles).map(([key, handle]) => [handle.signalId, key])
+          );
+          const signalStep = {
+            type: "signal" as const,
+            inProgress: true,
+            name: message.name,
+            signalId: signalIds[0]!,
+            args: message.args,
+            argsSize: valueSize(message.args as Value),
+            runResult: undefined,
+            startedAt: this.now,
+            completedAt: undefined,
+            timeoutMs: message.timeoutMs,
+            timeoutScheduledAt: undefined,
+            helperType: "any" as const,
+            groupId,
+            groupMembers: signalIds as any[],
+            signalKeyMap,
+            minRequired: message.min ?? 1,
+          };
+          return {
+            retry: undefined,
+            schedulerOptions: undefined,
+            step: signalStep,
+          };
+        }
+        throw new Error(`Unknown message type: ${(message as any).type}`);
       }),
     );
     const entries = (await this.ctx.runMutation(

@@ -94,6 +94,17 @@ const signalStep = v.object({
   args: v.any(),
   timeoutMs: v.optional(v.number()),
   timeoutScheduledAt: v.optional(v.number()),
+  helperType: v.optional(v.union(
+    v.literal("all"),
+    v.literal("race"),
+    v.literal("any")
+  )),
+  groupId: v.optional(v.string()),
+  groupMembers: v.optional(v.array(v.id("signals"))),
+  signalKeyMap: v.optional(v.any()),
+  winnerKey: v.optional(v.string()),
+  completedKeys: v.optional(v.array(v.string())),
+  minRequired: v.optional(v.number()),
 });
 
 export const step = v.union(executionStep, pauseStep, signalStep);
@@ -155,6 +166,13 @@ export const signalObject = {
   metadata: v.optional(v.any()),
   completedAt: v.optional(v.number()),
   waitingStepId: v.optional(v.id("steps")),
+  helperType: v.optional(v.union(
+    v.literal("all"),
+    v.literal("race"),
+    v.literal("any")
+  )),
+  groupId: v.optional(v.string()),
+  helperKey: v.optional(v.string()),
 }
 
 export const signalDocument = v.object({

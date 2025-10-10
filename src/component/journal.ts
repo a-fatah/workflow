@@ -147,9 +147,33 @@ export const startSteps = mutation({
         } else if (step.type === "signal") {
           // Update signal with waiting step ID so it can resume workflow when resolved
           const signal = await ctx.db.get(step.signalId);
-          if (signal && signal.state === "pending") {
+          if (signal && "state" in signal && signal.state === "pending") {
             signal.waitingStepId = stepId;
+            
+            // For grouped signals (race/any), store helper metadata
+            if (step.helperType) {
+              signal.helperType = step.helperType;
+              signal.groupId = step.groupId;
+            }
+            
             await ctx.db.replace(step.signalId, signal);
+          }
+          
+          // For grouped signals, update all member signals with group info
+          if (step.helperType && step.groupMembers && step.signalKeyMap) {
+            for (const signalIdStr of step.groupMembers) {
+              const signalId = ctx.db.normalizeId("signals", signalIdStr);
+              if (!signalId) continue;
+              
+              const memberSignal = await ctx.db.get(signalId);
+              if (memberSignal && "state" in memberSignal && memberSignal.state === "pending") {
+                memberSignal.helperType = step.helperType;
+                memberSignal.groupId = step.groupId;
+                memberSignal.waitingStepId = stepId;
+                memberSignal.helperKey = step.signalKeyMap[signalIdStr];
+                await ctx.db.replace(signalId, memberSignal);
+              }
+            }
           }
           
           // Schedule timeout if specified

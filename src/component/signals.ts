@@ -114,20 +114,33 @@ export const resolve = mutation({
     signal.value = args.value;
     signal.metadata = args.metadata ?? signal.metadata;
     signal.completedAt = Date.now();
-    const hadWaitingStep = await completeWaitingStep(
-      ctx,
-      signal.waitingStepId,
-      {
-        kind: "success",
-        returnValue: signal.value,
-      },
-    );
-    if (hadWaitingStep) {
+    
+    await cancelTimeoutWork(ctx, signal.waitingStepId);
+    
+    // Check if this is part of a grouped signal helper
+    const groupResult = await handleGroupedSignalCompletion(ctx, signal, true);
+    
+    if (groupResult.shouldResume) {
+      const resultValue = groupResult.result ?? signal.value;
+      const hadWaitingStep = await completeWaitingStep(
+        ctx,
+        signal.waitingStepId,
+        {
+          kind: "success",
+          returnValue: resultValue,
+        },
+      );
+      if (hadWaitingStep) {
+        signal.waitingStepId = undefined;
+      }
+      await ctx.db.replace(args.signalId, signal);
+      if (hadWaitingStep) {
+        await resumeWorkflow(ctx, signal);
+      }
+    } else {
+      // Part of a group that's not ready yet, just update the signal
       signal.waitingStepId = undefined;
-    }
-    await ctx.db.replace(args.signalId, signal);
-    if (hadWaitingStep) {
-      await resumeWorkflow(ctx, signal);
+      await ctx.db.replace(args.signalId, signal);
     }
   },
 });
@@ -147,20 +160,32 @@ export const reject = mutation({
     signal.state = "rejected";
     signal.error = args.error;
     signal.completedAt = Date.now();
-    const hadWaitingStep = await completeWaitingStep(
-      ctx,
-      signal.waitingStepId,
-      {
-        kind: "failed",
-        error: signal.error,
-      },
-    );
-    if (hadWaitingStep) {
+    
+    await cancelTimeoutWork(ctx, signal.waitingStepId);
+    
+    // Check if this is part of a grouped signal helper
+    const groupResult = await handleGroupedSignalCompletion(ctx, signal, false);
+    
+    if (groupResult.shouldResume) {
+      const hadWaitingStep = await completeWaitingStep(
+        ctx,
+        signal.waitingStepId,
+        {
+          kind: "failed",
+          error: signal.error,
+        },
+      );
+      if (hadWaitingStep) {
+        signal.waitingStepId = undefined;
+      }
+      await ctx.db.replace(args.signalId, signal);
+      if (hadWaitingStep) {
+        await resumeWorkflow(ctx, signal);
+      }
+    } else {
+      // Part of a group that's not ready yet, just update the signal
       signal.waitingStepId = undefined;
-    }
-    await ctx.db.replace(args.signalId, signal);
-    if (hadWaitingStep) {
-      await resumeWorkflow(ctx, signal);
+      await ctx.db.replace(args.signalId, signal);
     }
   },
 });
@@ -180,6 +205,9 @@ export const cancel = mutation({
     signal.state = "cancelled";
     signal.cancelReason = args.reason;
     signal.completedAt = Date.now();
+    
+    await cancelTimeoutWork(ctx, signal.waitingStepId);
+    
     const hadWaitingStep = await completeWaitingStep(
       ctx,
       signal.waitingStepId,
@@ -197,6 +225,180 @@ export const cancel = mutation({
     }
   },
 });
+
+async function cancelTimeoutWork(ctx: MutationCtx, waitingStepId: Id<"steps"> | undefined) {
+  if (!waitingStepId) {
+    return;
+  }
+  const stepEntry = await ctx.db.get(waitingStepId);
+  if (!stepEntry || stepEntry.step.type !== "signal" || !stepEntry.step.workId) {
+    return;
+  }
+  const workpool = await getWorkpool(ctx, {});
+  await workpool.cancel(ctx, stepEntry.step.workId);
+}
+
+async function handleGroupedSignalCompletion(
+  ctx: MutationCtx,
+  signal: SignalDocument,
+  isSuccess: boolean
+): Promise<{ shouldResume: boolean; result?: any }> {
+  if (!signal.helperType || !signal.groupId || !signal.waitingStepId) {
+    return { shouldResume: true };
+  }
+
+  const stepEntry = await ctx.db.get(signal.waitingStepId);
+  if (!stepEntry || stepEntry.step.type !== "signal") {
+    return { shouldResume: true };
+  }
+
+  const groupSignals = await ctx.db
+    .query("signals")
+    .filter((q) => q.eq(q.field("groupId"), signal.groupId))
+    .collect();
+
+  if (signal.helperType === "race") {
+    // First to complete wins
+    const isFirstToComplete = groupSignals.every(s => s._id === signal._id || s.state === "pending");
+    
+    if (isFirstToComplete) {
+      // Cancel all other pending signals
+      const console = await getDefaultLogger(ctx);
+      for (const otherSignal of groupSignals) {
+        if (otherSignal._id !== signal._id && otherSignal.state === "pending") {
+          otherSignal.state = "cancelled";
+          otherSignal.cancelReason = `Lost race to '${signal.name}'`;
+          otherSignal.completedAt = Date.now();
+          await cancelTimeoutWork(ctx, otherSignal.waitingStepId);
+          await ctx.db.replace(otherSignal._id, otherSignal);
+          
+          console.event("signalCancelled", {
+            workflowId: otherSignal.workflowId,
+            signalId: otherSignal._id,
+            signalName: otherSignal.name,
+            reason: otherSignal.cancelReason,
+          });
+        }
+      }
+      
+      // Store winner info in step
+      if (stepEntry.step.type === "signal") {
+        stepEntry.step.winnerKey = signal.helperKey ?? signal.name;
+        await ctx.db.replace(stepEntry._id, stepEntry);
+      }
+      
+      // Return result with winner info
+      return {
+        shouldResume: true,
+        result: {
+          winnerKey: signal.helperKey ?? signal.name,
+          value: isSuccess ? signal.value : undefined,
+        },
+      };
+    }
+    
+    // This signal lost the race, don't resume
+    return { shouldResume: false };
+  }
+
+  if (signal.helperType === "any") {
+    const minRequired = stepEntry.step.type === "signal" ? (stepEntry.step.minRequired ?? 1) : 1;
+    const successfulSignals = groupSignals.filter(s => s.state === "fulfilled");
+    
+    if (successfulSignals.length >= minRequired) {
+      // We've met the threshold, cancel remaining pending signals
+      const console = await getDefaultLogger(ctx);
+      for (const otherSignal of groupSignals) {
+        if (otherSignal.state === "pending") {
+          otherSignal.state = "cancelled";
+          otherSignal.cancelReason = `Sufficient signals resolved (${successfulSignals.length} of ${minRequired})`;
+          otherSignal.completedAt = Date.now();
+          await cancelTimeoutWork(ctx, otherSignal.waitingStepId);
+          await ctx.db.replace(otherSignal._id, otherSignal);
+          
+          console.event("signalCancelled", {
+            workflowId: otherSignal.workflowId,
+            signalId: otherSignal._id,
+            signalName: otherSignal.name,
+            reason: otherSignal.cancelReason,
+          });
+        }
+      }
+      
+      // Store completed keys in step
+      if (stepEntry.step.type === "signal") {
+        stepEntry.step.completedKeys = successfulSignals.map(s => s.helperKey ?? s.name);
+        await ctx.db.replace(stepEntry._id, stepEntry);
+      }
+      
+      return {
+        shouldResume: true,
+        result: {
+          resolved: successfulSignals.map(s => ({
+            key: s.helperKey ?? s.name,
+            value: s.value,
+          })),
+        },
+      };
+    }
+    
+    // Check if we can still meet the threshold
+    const pendingCount = groupSignals.filter(s => s.state === "pending").length;
+    if (successfulSignals.length + pendingCount < minRequired) {
+      // Can't meet threshold, fail the helper
+      return {
+        shouldResume: true,
+        result: {
+          kind: "failed",
+          error: `Cannot meet minimum threshold of ${minRequired} signals`,
+        },
+      };
+    }
+    
+    // Keep waiting for more signals
+    return { shouldResume: false };
+  }
+
+  if (signal.helperType === "all") {
+    // For "all", first rejection should cancel others and fail
+    if (!isSuccess) {
+      const console = await getDefaultLogger(ctx);
+      for (const otherSignal of groupSignals) {
+        if (otherSignal._id !== signal._id && otherSignal.state === "pending") {
+          otherSignal.state = "cancelled";
+          otherSignal.cancelReason = `Signal group failed: ${signal.name} rejected`;
+          otherSignal.completedAt = Date.now();
+          await cancelTimeoutWork(ctx, otherSignal.waitingStepId);
+          await ctx.db.replace(otherSignal._id, otherSignal);
+          
+          console.event("signalCancelled", {
+            workflowId: otherSignal.workflowId,
+            signalId: otherSignal._id,
+            signalName: otherSignal.name,
+            reason: otherSignal.cancelReason,
+          });
+        }
+      }
+      return { shouldResume: true };
+    }
+    
+    // Check if all signals have completed successfully
+    const allComplete = groupSignals.every(s => s.state === "fulfilled");
+    if (allComplete) {
+      return {
+        shouldResume: true,
+        result: Object.fromEntries(
+          groupSignals.map(s => [s.helperKey ?? s.name, s.value])
+        ),
+      };
+    }
+    
+    // Keep waiting for others
+    return { shouldResume: false };
+  }
+
+  return { shouldResume: true };
+}
 
 async function resumeWorkflow(ctx: MutationCtx, signal: SignalDocument) {
   const workflow = await getWorkflow(ctx, signal.workflowId, null);

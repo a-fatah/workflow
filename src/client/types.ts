@@ -56,8 +56,8 @@ export interface WorkflowSignalHelpers<SignalsValidator extends PropertyValidato
     options?: { timeoutMs?: number }
   ) => Promise<Returns>;
   all: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles) => Promise<{ [K in keyof Handles]: SignalValue<Handles[K]> }>;
-  race: <Handles extends SignalHandle<any>[]>(handles: Handles, options?: SignalRaceOptions) => Promise<SignalRaceResult<Handles>>;
-  any: <Handles extends SignalHandle<any>[]>(handles: Handles, options: SignalAnyOptions) => Promise<SignalAnyResult<Handles>>;
+  race: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles, options?: SignalRaceOptions) => Promise<SignalRaceResult<Handles>>;
+  any: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles, options: SignalAnyOptions) => Promise<SignalAnyResult<Handles>>;
 }
 
 export interface SignalCreateConfig<Returns> {
@@ -75,20 +75,20 @@ export interface SignalRaceOptions {
   timeoutMs?: number;
 }
 
-export type SignalRaceResult<Handles extends SignalHandle<any>[]> = {
-  handle: Handles[number];
-  value: SignalValue<Handles[number]> | undefined;
+export type SignalRaceResult<Handles extends Record<string, SignalHandle<any>>> = {
+  winnerKey: keyof Handles;
+  value: SignalValue<Handles[keyof Handles]>;
 };
 
 export interface SignalAnyOptions {
-  min: number;
+  min?: number;
   timeoutMs?: number;
 }
 
-export type SignalAnyResult<Handles extends SignalHandle<any>[]> = {
+export type SignalAnyResult<Handles extends Record<string, SignalHandle<any>>> = {
   resolved: Array<{
-    handle: Handles[number];
-    value: SignalValue<Handles[number]> | undefined;
+    key: keyof Handles;
+    value: SignalValue<Handles[keyof Handles]>;
   }>;
 };
 export type WorkflowStep<SignalsValidator extends PropertyValidators = {}> = {

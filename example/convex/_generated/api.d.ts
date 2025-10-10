@@ -95,17 +95,24 @@ export declare const components: {
                   args: any;
                   argsSize: number;
                   completedAt?: number;
+                  completedKeys?: Array<string>;
+                  groupId?: string;
+                  groupMembers?: Array<string>;
+                  helperType?: "all" | "race" | "any";
                   inProgress: boolean;
+                  minRequired?: number;
                   name: string;
                   runResult?:
                     | { kind: "success"; returnValue: any }
                     | { error: string; kind: "failed" }
                     | { kind: "canceled" };
                   signalId: string;
+                  signalKeyMap?: any;
                   startedAt: number;
                   timeoutMs?: number;
                   timeoutScheduledAt?: number;
                   type: "signal";
+                  winnerKey?: string;
                   workId?: string;
                 };
             stepNumber: number;
@@ -188,17 +195,24 @@ export declare const components: {
                   args: any;
                   argsSize: number;
                   completedAt?: number;
+                  completedKeys?: Array<string>;
+                  groupId?: string;
+                  groupMembers?: Array<string>;
+                  helperType?: "all" | "race" | "any";
                   inProgress: boolean;
+                  minRequired?: number;
                   name: string;
                   runResult?:
                     | { kind: "success"; returnValue: any }
                     | { error: string; kind: "failed" }
                     | { kind: "canceled" };
                   signalId: string;
+                  signalKeyMap?: any;
                   startedAt: number;
                   timeoutMs?: number;
                   timeoutScheduledAt?: number;
                   type: "signal";
+                  winnerKey?: string;
                   workId?: string;
                 };
           }>;
@@ -253,17 +267,24 @@ export declare const components: {
                 args: any;
                 argsSize: number;
                 completedAt?: number;
+                completedKeys?: Array<string>;
+                groupId?: string;
+                groupMembers?: Array<string>;
+                helperType?: "all" | "race" | "any";
                 inProgress: boolean;
+                minRequired?: number;
                 name: string;
                 runResult?:
                   | { kind: "success"; returnValue: any }
                   | { error: string; kind: "failed" }
                   | { kind: "canceled" };
                 signalId: string;
+                signalKeyMap?: any;
                 startedAt: number;
                 timeoutMs?: number;
                 timeoutScheduledAt?: number;
                 type: "signal";
+                winnerKey?: string;
                 workId?: string;
               };
           stepNumber: number;
@@ -306,6 +327,9 @@ export declare const components: {
           completedAt?: number;
           error?: string;
           generationNumber: number;
+          groupId?: string;
+          helperKey?: string;
+          helperType?: "all" | "race" | "any";
           metadata?: any;
           name: string;
           state: "pending" | "fulfilled" | "rejected" | "cancelled";
@@ -411,17 +435,24 @@ export declare const components: {
                   args: any;
                   argsSize: number;
                   completedAt?: number;
+                  completedKeys?: Array<string>;
+                  groupId?: string;
+                  groupMembers?: Array<string>;
+                  helperType?: "all" | "race" | "any";
                   inProgress: boolean;
+                  minRequired?: number;
                   name: string;
                   runResult?:
                     | { kind: "success"; returnValue: any }
                     | { error: string; kind: "failed" }
                     | { kind: "canceled" };
                   signalId: string;
+                  signalKeyMap?: any;
                   startedAt: number;
                   timeoutMs?: number;
                   timeoutScheduledAt?: number;
                   type: "signal";
+                  winnerKey?: string;
                   workId?: string;
                 };
             stepNumber: number;
