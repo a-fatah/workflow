@@ -52,6 +52,12 @@ export class StepContext<SignalsValidator extends PropertyValidators = {}> imple
           error,
         });
       },
+      cancel: async (handle, reason) => {
+        await this.ctx.runMutation(this.component.signals.cancel, {
+          signalId: handle.signalId,
+          reason,
+        });
+      },
       load: async (handle) => {
         return await this.ctx.runQuery(this.component.signals.load, {
           signalId: handle.signalId,

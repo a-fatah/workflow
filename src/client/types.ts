@@ -49,6 +49,7 @@ export interface WorkflowSignalHelpers<SignalsValidator extends PropertyValidato
   ): Promise<SignalHandle<Returns>>;
   resolve: <Returns>(handle: SignalHandle<Returns>, value: Returns) => Promise<void>;
   reject: (handle: SignalHandle<unknown>, error: string) => Promise<void>;
+  cancel: (handle: SignalHandle<unknown>, reason: string) => Promise<void>;
   load: (handle: SignalHandle<unknown>) => Promise<SignalDocument>;
   awaitSignal: <Returns>(
     handle: SignalHandle<Returns>,

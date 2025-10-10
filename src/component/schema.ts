@@ -139,7 +139,7 @@ const journalObject = {
   step,
 };
 
-const signalState = literals("pending", "fulfilled", "rejected");
+const signalState = literals("pending", "fulfilled", "rejected", "cancelled");
 
 export type SignalState = Infer<typeof signalState>;
 
@@ -150,6 +150,7 @@ export const signalObject = {
   state: signalState,
   value: v.optional(v.any()),
   error: v.optional(v.string()),
+  cancelReason: v.optional(v.string()),
   validator: v.optional(v.any()),
   metadata: v.optional(v.any()),
   completedAt: v.optional(v.number()),

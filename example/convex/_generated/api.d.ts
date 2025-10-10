@@ -272,6 +272,12 @@ export declare const components: {
       >;
     };
     signals: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        { reason: string; signalId: string },
+        null
+      >;
       create: FunctionReference<
         "mutation",
         "internal",
@@ -296,12 +302,13 @@ export declare const components: {
         {
           _creationTime: number;
           _id: string;
+          cancelReason?: string;
           completedAt?: number;
           error?: string;
           generationNumber: number;
           metadata?: any;
           name: string;
-          state: "pending" | "fulfilled" | "rejected";
+          state: "pending" | "fulfilled" | "rejected" | "cancelled";
           validator?: any;
           value?: any;
           waitingStepId?: string;

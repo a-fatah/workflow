@@ -165,6 +165,39 @@ export const reject = mutation({
   },
 });
 
+export const cancel = mutation({
+  args: {
+    signalId: v.id("signals"),
+    reason: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const signal = await ctx.db.get(args.signalId);
+    assert(signal, `Signal not found: ${args.signalId}`);
+    if (signal.state !== "pending") {
+      throw new Error(`Signal already completed: ${args.signalId}`);
+    }
+    signal.state = "cancelled";
+    signal.cancelReason = args.reason;
+    signal.completedAt = Date.now();
+    const hadWaitingStep = await completeWaitingStep(
+      ctx,
+      signal.waitingStepId,
+      {
+        kind: "failed",
+        error: `Signal cancelled: ${args.reason}`,
+      },
+    );
+    if (hadWaitingStep) {
+      signal.waitingStepId = undefined;
+    }
+    await ctx.db.replace(args.signalId, signal);
+    if (hadWaitingStep) {
+      await resumeWorkflow(ctx, signal);
+    }
+  },
+});
+
 async function resumeWorkflow(ctx: MutationCtx, signal: SignalDocument) {
   const workflow = await getWorkflow(ctx, signal.workflowId, null);
   if (workflow.runResult) {

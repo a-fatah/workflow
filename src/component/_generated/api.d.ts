@@ -262,6 +262,12 @@ export type Mounts = {
     >;
   };
   signals: {
+    cancel: FunctionReference<
+      "mutation",
+      "public",
+      { reason: string; signalId: string },
+      null
+    >;
     create: FunctionReference<
       "mutation",
       "public",
@@ -286,12 +292,13 @@ export type Mounts = {
       {
         _creationTime: number;
         _id: string;
+        cancelReason?: string;
         completedAt?: number;
         error?: string;
         generationNumber: number;
         metadata?: any;
         name: string;
-        state: "pending" | "fulfilled" | "rejected";
+        state: "pending" | "fulfilled" | "rejected" | "cancelled";
         validator?: any;
         value?: any;
         waitingStepId?: string;
