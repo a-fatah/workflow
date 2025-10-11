@@ -4,11 +4,21 @@ import type {
   FunctionArgs,
   FunctionReference,
   FunctionReturnType,
+  RegisteredMutation,
 } from "convex/server";
 import type { api } from "../component/_generated/api.js";
-import type { GenericId, Validator } from "convex/values";
+import type {
+  GenericId,
+  ObjectType,
+  PropertyValidators,
+  Validator,
+} from "convex/values";
 import type { WorkflowId, SignalHandle } from "../types.js";
-import type { SignalDocument } from "../component/schema.js";
+import type {
+  SignalDocument,
+  Event,
+  EventWorkflow,
+} from "../component/schema.js";
 
 export type WorkflowComponent = UseApi<typeof api>;
 
@@ -39,7 +49,7 @@ export type SchedulerOptions =
       runAfter?: number;
     };
 
-export type SignalDefinition<T = any, M = any> = 
+export type SignalDefinition<T = any, M = any> =
   | Validator<T>
   | {
       returns: Validator<T, any, any>;
@@ -48,32 +58,60 @@ export type SignalDefinition<T = any, M = any> =
 
 export type SignalsDefinition = Record<string, SignalDefinition>;
 
-export type ExtractReturns<SD extends SignalDefinition> = 
-  SD extends Validator<infer T> ? T : SD extends { returns: Validator<infer T, any, any> } ? T : never;
+export type ExtractReturns<SD extends SignalDefinition> =
+  SD extends Validator<infer T>
+    ? T
+    : SD extends { returns: Validator<infer T, any, any> }
+      ? T
+      : never;
 
-export type ExtractMetadata<SD extends SignalDefinition> = 
-  SD extends { metadata?: Validator<infer M, any, any> } ? M : any;
+export type ExtractMetadata<SD extends SignalDefinition> = SD extends {
+  metadata?: Validator<infer M, any, any>;
+}
+  ? M
+  : any;
 
-export interface WorkflowSignalHelpers<SignalsValidator extends SignalsDefinition = SignalsDefinition> {
+export interface WorkflowSignalHelpers<
+  SignalsValidator extends SignalsDefinition = SignalsDefinition,
+> {
   create<K extends keyof SignalsValidator>(
-    name: K
-  ): Promise<SignalHandle<ExtractReturns<SignalsValidator[K]>, ExtractMetadata<SignalsValidator[K]>>>;
+    name: K,
+  ): Promise<
+    SignalHandle<
+      ExtractReturns<SignalsValidator[K]>,
+      ExtractMetadata<SignalsValidator[K]>
+    >
+  >;
   create<Returns>(
     name: string,
-    config: { returns: Validator<Returns, any, any> }
+    config: { returns: Validator<Returns, any, any> },
   ): Promise<SignalHandle<Returns>>;
-  resolve: <Returns>(handle: SignalHandle<Returns>, value: Returns) => Promise<void>;
+  resolve: <Returns>(
+    handle: SignalHandle<Returns>,
+    value: Returns,
+  ) => Promise<void>;
   reject: (handle: SignalHandle<unknown>, error: string) => Promise<void>;
   cancel: (handle: SignalHandle<unknown>, reason: string) => Promise<void>;
   load: (handle: SignalHandle<unknown>) => Promise<SignalDocument>;
   awaitSignal: <Returns>(
     handle: SignalHandle<Returns>,
-    options?: { timeoutMs?: number }
+    options?: { timeoutMs?: number },
   ) => Promise<Returns>;
-  all: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles) => Promise<{ [K in keyof Handles]: SignalValue<Handles[K]> }>;
-  race: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles, options?: SignalRaceOptions) => Promise<SignalRaceResult<Handles>>;
-  any: <Handles extends Record<string, SignalHandle<any>>>(handles: Handles, options: SignalAnyOptions) => Promise<SignalAnyResult<Handles>>;
-  updateMetadata: <Returns, Metadata>(handle: SignalHandle<Returns, Metadata>, metadata: Metadata) => Promise<void>;
+  all: <Handles extends Record<string, SignalHandle<any>>>(
+    handles: Handles,
+  ) => Promise<{ [K in keyof Handles]: SignalValue<Handles[K]> }>;
+  race: <Handles extends Record<string, SignalHandle<any>>>(
+    handles: Handles,
+    options?: SignalRaceOptions,
+  ) => Promise<SignalRaceResult<Handles>>;
+  any: <Handles extends Record<string, SignalHandle<any>>>(
+    handles: Handles,
+    options: SignalAnyOptions,
+  ) => Promise<SignalAnyResult<Handles>>;
+  updateMetadata: <Returns, Metadata>(
+    handle: SignalHandle<Returns, Metadata>,
+    metadata: Metadata,
+  ) => Promise<void>;
 }
 
 export interface SignalCreateConfig<Returns> {
@@ -83,15 +121,16 @@ export interface SignalCreateConfig<Returns> {
   validator?: unknown;
 }
 
-export type SignalValue<Handle extends SignalHandle<any>> = Handle extends SignalHandle<infer T>
-  ? T
-  : never;
+export type SignalValue<Handle extends SignalHandle<any>> =
+  Handle extends SignalHandle<infer T> ? T : never;
 
 export interface SignalRaceOptions {
   timeoutMs?: number;
 }
 
-export type SignalRaceResult<Handles extends Record<string, SignalHandle<any>>> = {
+export type SignalRaceResult<
+  Handles extends Record<string, SignalHandle<any>>,
+> = {
   winnerKey: keyof Handles;
   value: SignalValue<Handles[keyof Handles]>;
 };
@@ -101,13 +140,16 @@ export interface SignalAnyOptions {
   timeoutMs?: number;
 }
 
-export type SignalAnyResult<Handles extends Record<string, SignalHandle<any>>> = {
-  resolved: Array<{
-    key: keyof Handles;
-    value: SignalValue<Handles[keyof Handles]>;
-  }>;
-};
-export type WorkflowStep<SignalsValidator extends SignalsDefinition = SignalsDefinition> = {
+export type SignalAnyResult<Handles extends Record<string, SignalHandle<any>>> =
+  {
+    resolved: Array<{
+      key: keyof Handles;
+      value: SignalValue<Handles[keyof Handles]>;
+    }>;
+  };
+export type WorkflowStep<
+  SignalsValidator extends SignalsDefinition = SignalsDefinition,
+> = {
   /**
    * The ID of the workflow currently running.
    */
@@ -166,10 +208,7 @@ export type WorkflowStep<SignalsValidator extends SignalsDefinition = SignalsDef
    * @param opts - Options for retrying, scheduling and naming the pause.
    */
   pause<
-    Mutation extends FunctionReference<
-      "mutation",
-      "internal"
-    >,
+    Mutation extends FunctionReference<"mutation", "internal">,
     Returns = unknown,
   >(
     opts?: {
@@ -215,3 +254,100 @@ export type OpaqueIds<T> =
         : T extends object
           ? { [K in keyof T]: OpaqueIds<T[K]> }
           : T;
+
+// Event-driven workflows types
+
+/**
+ * Definition for an event that can be published.
+ * The validator defines the shape of the event payload.
+ */
+export type EventDefinition<
+  PayloadValidator extends PropertyValidators,
+  Payload extends ObjectType<PayloadValidator> = ObjectType<PayloadValidator>,
+> = {
+  name: string;
+  validator: PayloadValidator;
+  _payload?: Payload; // Type inference helper
+};
+
+/**
+ * A defined event that has been registered with the WorkflowManager.
+ * Includes optional handlers that were declared at definition time.
+ */
+export type DefinedEvent<
+  PayloadValidator extends PropertyValidators,
+  Payload extends ObjectType<PayloadValidator> = ObjectType<PayloadValidator>,
+> = {
+  name: string;
+  validator: PayloadValidator;
+  _payload?: Payload;
+  _topicId?: string; // Set internally after registration
+  _handlers?: ReadonlyArray<RegisteredMutation<"internal", Payload, any>>;
+};
+
+/**
+ * Helper type to extract payload type from an event definition.
+ */
+export type EventPayload<E extends DefinedEvent<any>> =
+  E extends DefinedEvent<infer V extends PropertyValidators>
+    ? ObjectType<V>
+    : never;
+
+/**
+ * Type constraint for event handlers.
+ * Ensures that the handler's args match the event payload structure.
+ */
+export type EventHandler<E extends DefinedEvent<any>> =
+  E extends DefinedEvent<infer PayloadValidator extends PropertyValidators>
+    ? RegisteredMutation<"internal", ObjectType<PayloadValidator>, any>
+    : never;
+
+/**
+ * Options for publishing an event.
+ */
+export type PublishEventOptions = {
+  /**
+   * Idempotency key to prevent duplicate event processing.
+   * If the same key is used, the existing event will be returned without creating workflows.
+   */
+  idempotencyKey?: string;
+
+  /**
+   * Optional metadata to store with the event (e.g., source, traceId, etc.)
+   */
+  metadata?: unknown;
+};
+
+/**
+ * Result of publishing an event.
+ */
+export type PublishEventResult = {
+  eventId: string;
+  workflowIds: string[];
+};
+
+/**
+ * Options for replaying an event.
+ */
+export type ReplayEventOptions = {
+  /**
+   * Optional: Only replay to a specific handler.
+   * If not provided, replays to all registered handlers.
+   */
+  workflowHandle?: string;
+};
+
+/**
+ * Result of replaying an event.
+ */
+export type ReplayEventResult = {
+  workflowIds: string[];
+};
+
+/**
+ * Event status details including all workflows.
+ */
+export type EventStatusResult = {
+  event: OpaqueIds<Event>;
+  workflows: OpaqueIds<EventWorkflow>[];
+};

@@ -10,9 +10,6 @@
 
 import type * as admin from "../admin.js";
 import type * as example from "../example.js";
-import type * as signalTest from "../signalTest.js";
-import type * as signalTimeoutTest from "../signalTimeoutTest.js";
-import type * as subscriptionTrial from "../subscriptionTrial.js";
 import type * as transcription from "../transcription.js";
 
 import type {
@@ -32,9 +29,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   example: typeof example;
-  signalTest: typeof signalTest;
-  signalTimeoutTest: typeof signalTimeoutTest;
-  subscriptionTrial: typeof subscriptionTrial;
   transcription: typeof transcription;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
@@ -50,6 +44,130 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   workflow: {
+    events: {
+      defineTopic: FunctionReference<
+        "mutation",
+        "internal",
+        { name: string; validator: any },
+        string
+      >;
+      getEventStatus: FunctionReference<
+        "query",
+        "internal",
+        { eventId: string },
+        {
+          event: {
+            _creationTime: number;
+            _id: string;
+            completedAt?: number;
+            createdAt: number;
+            idempotencyKey?: string;
+            lastError?: string;
+            metadata?: any;
+            payload: any;
+            retryCount: number;
+            status: "pending" | "dispatching" | "completed" | "failed";
+            topicId: string;
+          };
+          workflows: Array<{
+            _creationTime: number;
+            _id: string;
+            completedAt?: number;
+            createdAt: number;
+            eventId: string;
+            status: "pending" | "running" | "completed" | "failed" | "canceled";
+            workflowHandle: string;
+            workflowId: string;
+          }>;
+        }
+      >;
+      getTopicByName: FunctionReference<
+        "query",
+        "internal",
+        { name: string },
+        {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          name: string;
+          validator: any;
+        } | null
+      >;
+      listEventsByTopic: FunctionReference<
+        "query",
+        "internal",
+        {
+          limit?: number;
+          status?: "pending" | "dispatching" | "completed" | "failed";
+          topicId: string;
+        },
+        {
+          events: Array<{
+            _creationTime: number;
+            _id: string;
+            completedAt?: number;
+            createdAt: number;
+            idempotencyKey?: string;
+            lastError?: string;
+            metadata?: any;
+            payload: any;
+            retryCount: number;
+            status: "pending" | "dispatching" | "completed" | "failed";
+            topicId: string;
+          }>;
+        }
+      >;
+      listPendingEvents: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; topicId?: string },
+        {
+          count: number;
+          events: Array<{
+            _creationTime: number;
+            _id: string;
+            completedAt?: number;
+            createdAt: number;
+            idempotencyKey?: string;
+            lastError?: string;
+            metadata?: any;
+            payload: any;
+            retryCount: number;
+            status: "pending" | "dispatching" | "completed" | "failed";
+            topicId: string;
+          }>;
+        }
+      >;
+      publishEvent: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          idempotencyKey?: string;
+          metadata?: any;
+          payload: any;
+          topicId: string;
+        },
+        { eventId: string; workflowIds: Array<string> }
+      >;
+      registerWorkflow: FunctionReference<
+        "mutation",
+        "internal",
+        { topicId: string; workflowHandle: string },
+        null
+      >;
+      replayEvent: FunctionReference<
+        "mutation",
+        "internal",
+        { eventId: string; workflowHandle?: string },
+        { workflowIds: Array<string> }
+      >;
+      unregisterWorkflow: FunctionReference<
+        "mutation",
+        "internal",
+        { topicId: string; workflowHandle: string },
+        boolean
+      >;
+    };
     journal: {
       load: FunctionReference<
         "query",
@@ -349,6 +467,12 @@ export declare const components: {
         "mutation",
         "internal",
         { metadata?: any; signalId: string; value?: any },
+        null
+      >;
+      updateMetadata: FunctionReference<
+        "mutation",
+        "internal",
+        { metadata: any; signalId: string },
         null
       >;
     };

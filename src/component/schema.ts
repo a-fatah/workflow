@@ -175,6 +175,76 @@ export const signalObject = {
   helperKey: v.optional(v.string()),
 }
 
+// Event-driven workflows schemas
+const topicObject = {
+  name: v.string(),
+  validator: v.any(), // Convex validator stored via convexToJson
+  createdAt: v.number(),
+};
+
+export const topicDocument = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  ...topicObject,
+});
+export type Topic = Infer<typeof topicDocument>;
+
+const topicRegistrationObject = {
+  topicId: v.id("topics"),
+  workflowHandle: v.string(),
+  createdAt: v.number(),
+};
+
+export const topicRegistrationDocument = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  ...topicRegistrationObject,
+});
+export type TopicRegistration = Infer<typeof topicRegistrationDocument>;
+
+const eventStatus = literals("pending", "dispatching", "completed", "failed");
+
+export type EventStatus = Infer<typeof eventStatus>;
+
+const eventObject = {
+  topicId: v.id("topics"),
+  payload: v.any(),
+  status: eventStatus,
+  retryCount: v.number(),
+  lastError: v.optional(v.string()),
+  idempotencyKey: v.optional(v.string()),
+  metadata: v.optional(v.any()),
+  createdAt: v.number(),
+  completedAt: v.optional(v.number()),
+};
+
+export const eventDocument = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  ...eventObject,
+});
+export type Event = Infer<typeof eventDocument>;
+
+const eventWorkflowStatus = literals("pending", "running", "completed", "failed", "canceled");
+
+export type EventWorkflowStatus = Infer<typeof eventWorkflowStatus>;
+
+const eventWorkflowObject = {
+  eventId: v.id("events"),
+  workflowId: v.id("workflows"),
+  workflowHandle: v.string(),
+  status: eventWorkflowStatus,
+  createdAt: v.number(),
+  completedAt: v.optional(v.number()),
+};
+
+export const eventWorkflowDocument = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  ...eventWorkflowObject,
+});
+export type EventWorkflow = Infer<typeof eventWorkflowDocument>;
+
 export const signalDocument = v.object({
   _id: v.string(),
   _creationTime: v.number(),
@@ -227,4 +297,17 @@ export default defineSchema({
       }),
     ),
   ),
+  // Event-driven workflows tables
+  topics: defineTable(topicObject)
+    .index("by_name", ["name"]),
+  topicRegistrations: defineTable(topicRegistrationObject)
+    .index("by_topic", ["topicId"]),
+  events: defineTable(eventObject)
+    .index("by_topic_status", ["topicId", "status"])
+    .index("by_status", ["status"])
+    .index("by_idempotency", ["topicId", "idempotencyKey"]),
+  eventWorkflows: defineTable(eventWorkflowObject)
+    .index("by_event", ["eventId"])
+    .index("by_workflow", ["workflowId"])
+    .index("by_event_status", ["eventId", "status"]),
 });

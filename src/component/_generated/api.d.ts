@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as events from "../events.js";
 import type * as journal from "../journal.js";
 import type * as logging from "../logging.js";
 import type * as model from "../model.js";
@@ -31,6 +32,7 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  events: typeof events;
   journal: typeof journal;
   logging: typeof logging;
   model: typeof model;
@@ -40,6 +42,130 @@ declare const fullApi: ApiFromModules<{
   workflow: typeof workflow;
 }>;
 export type Mounts = {
+  events: {
+    defineTopic: FunctionReference<
+      "mutation",
+      "public",
+      { name: string; validator: any },
+      string
+    >;
+    getEventStatus: FunctionReference<
+      "query",
+      "public",
+      { eventId: string },
+      {
+        event: {
+          _creationTime: number;
+          _id: string;
+          completedAt?: number;
+          createdAt: number;
+          idempotencyKey?: string;
+          lastError?: string;
+          metadata?: any;
+          payload: any;
+          retryCount: number;
+          status: "pending" | "dispatching" | "completed" | "failed";
+          topicId: string;
+        };
+        workflows: Array<{
+          _creationTime: number;
+          _id: string;
+          completedAt?: number;
+          createdAt: number;
+          eventId: string;
+          status: "pending" | "running" | "completed" | "failed" | "canceled";
+          workflowHandle: string;
+          workflowId: string;
+        }>;
+      }
+    >;
+    getTopicByName: FunctionReference<
+      "query",
+      "public",
+      { name: string },
+      {
+        _creationTime: number;
+        _id: string;
+        createdAt: number;
+        name: string;
+        validator: any;
+      } | null
+    >;
+    listEventsByTopic: FunctionReference<
+      "query",
+      "public",
+      {
+        limit?: number;
+        status?: "pending" | "dispatching" | "completed" | "failed";
+        topicId: string;
+      },
+      {
+        events: Array<{
+          _creationTime: number;
+          _id: string;
+          completedAt?: number;
+          createdAt: number;
+          idempotencyKey?: string;
+          lastError?: string;
+          metadata?: any;
+          payload: any;
+          retryCount: number;
+          status: "pending" | "dispatching" | "completed" | "failed";
+          topicId: string;
+        }>;
+      }
+    >;
+    listPendingEvents: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; topicId?: string },
+      {
+        count: number;
+        events: Array<{
+          _creationTime: number;
+          _id: string;
+          completedAt?: number;
+          createdAt: number;
+          idempotencyKey?: string;
+          lastError?: string;
+          metadata?: any;
+          payload: any;
+          retryCount: number;
+          status: "pending" | "dispatching" | "completed" | "failed";
+          topicId: string;
+        }>;
+      }
+    >;
+    publishEvent: FunctionReference<
+      "mutation",
+      "public",
+      {
+        idempotencyKey?: string;
+        metadata?: any;
+        payload: any;
+        topicId: string;
+      },
+      { eventId: string; workflowIds: Array<string> }
+    >;
+    registerWorkflow: FunctionReference<
+      "mutation",
+      "public",
+      { topicId: string; workflowHandle: string },
+      null
+    >;
+    replayEvent: FunctionReference<
+      "mutation",
+      "public",
+      { eventId: string; workflowHandle?: string },
+      { workflowIds: Array<string> }
+    >;
+    unregisterWorkflow: FunctionReference<
+      "mutation",
+      "public",
+      { topicId: string; workflowHandle: string },
+      boolean
+    >;
+  };
   journal: {
     load: FunctionReference<
       "query",
@@ -85,17 +211,24 @@ export type Mounts = {
                 args: any;
                 argsSize: number;
                 completedAt?: number;
+                completedKeys?: Array<string>;
+                groupId?: string;
+                groupMembers?: Array<string>;
+                helperType?: "all" | "race" | "any";
                 inProgress: boolean;
+                minRequired?: number;
                 name: string;
                 runResult?:
                   | { kind: "success"; returnValue: any }
                   | { error: string; kind: "failed" }
                   | { kind: "canceled" };
                 signalId: string;
+                signalKeyMap?: any;
                 startedAt: number;
                 timeoutMs?: number;
                 timeoutScheduledAt?: number;
                 type: "signal";
+                winnerKey?: string;
                 workId?: string;
               };
           stepNumber: number;
@@ -178,17 +311,24 @@ export type Mounts = {
                 args: any;
                 argsSize: number;
                 completedAt?: number;
+                completedKeys?: Array<string>;
+                groupId?: string;
+                groupMembers?: Array<string>;
+                helperType?: "all" | "race" | "any";
                 inProgress: boolean;
+                minRequired?: number;
                 name: string;
                 runResult?:
                   | { kind: "success"; returnValue: any }
                   | { error: string; kind: "failed" }
                   | { kind: "canceled" };
                 signalId: string;
+                signalKeyMap?: any;
                 startedAt: number;
                 timeoutMs?: number;
                 timeoutScheduledAt?: number;
                 type: "signal";
+                winnerKey?: string;
                 workId?: string;
               };
         }>;
@@ -243,17 +383,24 @@ export type Mounts = {
               args: any;
               argsSize: number;
               completedAt?: number;
+              completedKeys?: Array<string>;
+              groupId?: string;
+              groupMembers?: Array<string>;
+              helperType?: "all" | "race" | "any";
               inProgress: boolean;
+              minRequired?: number;
               name: string;
               runResult?:
                 | { kind: "success"; returnValue: any }
                 | { error: string; kind: "failed" }
                 | { kind: "canceled" };
               signalId: string;
+              signalKeyMap?: any;
               startedAt: number;
               timeoutMs?: number;
               timeoutScheduledAt?: number;
               type: "signal";
+              winnerKey?: string;
               workId?: string;
             };
         stepNumber: number;
@@ -296,6 +443,9 @@ export type Mounts = {
         completedAt?: number;
         error?: string;
         generationNumber: number;
+        groupId?: string;
+        helperKey?: string;
+        helperType?: "all" | "race" | "any";
         metadata?: any;
         name: string;
         state: "pending" | "fulfilled" | "rejected" | "cancelled";
@@ -315,6 +465,12 @@ export type Mounts = {
       "mutation",
       "public",
       { metadata?: any; signalId: string; value?: any },
+      null
+    >;
+    updateMetadata: FunctionReference<
+      "mutation",
+      "public",
+      { metadata: any; signalId: string },
       null
     >;
   };
@@ -401,17 +557,24 @@ export type Mounts = {
                 args: any;
                 argsSize: number;
                 completedAt?: number;
+                completedKeys?: Array<string>;
+                groupId?: string;
+                groupMembers?: Array<string>;
+                helperType?: "all" | "race" | "any";
                 inProgress: boolean;
+                minRequired?: number;
                 name: string;
                 runResult?:
                   | { kind: "success"; returnValue: any }
                   | { error: string; kind: "failed" }
                   | { kind: "canceled" };
                 signalId: string;
+                signalKeyMap?: any;
                 startedAt: number;
                 timeoutMs?: number;
                 timeoutScheduledAt?: number;
                 type: "signal";
+                winnerKey?: string;
                 workId?: string;
               };
           stepNumber: number;

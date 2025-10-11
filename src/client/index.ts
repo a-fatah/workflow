@@ -17,7 +17,21 @@ import type { ObjectType, PropertyValidators, Validator, Infer } from "convex/va
 import type { Step, SignalDocument } from "../component/schema.js";
 import type { OnCompleteArgs, WorkflowId } from "../types.js";
 import { safeFunctionName } from "./safeFunctionName.js";
-import type { OpaqueIds, WorkflowComponent, WorkflowStep, SignalDefinition, ExtractReturns, ExtractMetadata } from "./types.js";
+import type {
+  OpaqueIds,
+  WorkflowComponent,
+  WorkflowStep,
+  SignalDefinition,
+  ExtractReturns,
+  ExtractMetadata,
+  DefinedEvent,
+  EventHandler,
+  PublishEventOptions,
+  PublishEventResult,
+  ReplayEventOptions,
+  ReplayEventResult,
+  EventStatusResult,
+} from "./types.js";
 import { workflowMutation } from "./workflowMutation.js";
 import { validate } from "convex-helpers/validators";
 
@@ -340,6 +354,164 @@ export class WorkflowManager {
       resumeValue,
       name: opts?.name,
     });
+  }
+
+  /**
+   * Define an event with optional declarative handler registration.
+   * Handlers are type-checked at compile time to ensure args match payload structure.
+   *
+   * @param config - Event configuration including name, validator, and optional handlers
+   * @returns A defined event that can be used for publishing
+   */
+  defineEvent<PayloadValidator extends PropertyValidators>(
+    config: {
+      name: string;
+      validator: PayloadValidator;
+      handlers?: Array<EventHandler<DefinedEvent<PayloadValidator>>>;
+    }
+  ): DefinedEvent<PayloadValidator> {
+    return {
+      name: config.name,
+      validator: config.validator,
+      _handlers: config.handlers,
+    };
+  }
+
+  /**
+   * Event-driven workflow APIs.
+   * Access via workflow.events.publish(), workflow.events.replay(), etc.
+   */
+  get events() {
+    return {
+      /**
+       * Publish an event to trigger workflows for all registered handlers.
+       *
+       * @param ctx - The Convex context
+       * @param eventDef - The defined event from defineEvent()
+       * @param payload - The event payload (type-checked against event validator)
+       * @param options - Optional idempotency key and metadata
+       * @returns Event ID and workflow IDs that were started
+       */
+      publish: async <PayloadValidator extends PropertyValidators>(
+        ctx: RunMutationCtx,
+        eventDef: DefinedEvent<PayloadValidator>,
+        payload: ObjectType<PayloadValidator>,
+        options?: PublishEventOptions
+      ): Promise<PublishEventResult> => {
+        // First, ensure topic exists and get topicId
+        let topicId = eventDef._topicId;
+
+        if (!topicId) {
+          // Define topic if not already done
+          topicId = await ctx.runMutation(this.component.events.defineTopic, {
+            name: eventDef.name,
+            validator: eventDef.validator,
+          });
+
+          // Register handlers if they were declared at definition time
+          if (eventDef._handlers && eventDef._handlers.length > 0) {
+            for (const handler of eventDef._handlers) {
+              const handlerRef = handler as any as FunctionReference<"mutation", "internal">;
+              const workflowHandle = await createFunctionHandle(handlerRef);
+
+              await ctx.runMutation(this.component.events.registerWorkflow, {
+                topicId,
+                workflowHandle,
+              });
+            }
+          }
+
+          // Cache topicId for future publishes
+          (eventDef as any)._topicId = topicId;
+        }
+
+        // Publish the event
+        const result = await ctx.runMutation(this.component.events.publishEvent, {
+          topicId,
+          payload,
+          idempotencyKey: options?.idempotencyKey,
+          metadata: options?.metadata,
+        });
+
+        return {
+          eventId: result.eventId as unknown as string,
+          workflowIds: result.workflowIds.map((id) => id as unknown as string),
+        };
+      },
+
+      /**
+       * Replay a pending or failed event.
+       *
+       * @param ctx - The Convex context
+       * @param eventId - The event ID to replay
+       * @param options - Optional: specify a specific handler to replay to
+       * @returns Workflow IDs that were started
+       */
+      replay: async (
+        ctx: RunMutationCtx,
+        eventId: string,
+        options?: ReplayEventOptions
+      ): Promise<ReplayEventResult> => {
+        const result = await ctx.runMutation(this.component.events.replayEvent, {
+          eventId: eventId as any,
+          workflowHandle: options?.workflowHandle,
+        });
+
+        return {
+          workflowIds: result.workflowIds.map((id) => id as unknown as string),
+        };
+      },
+
+      /**
+       * List pending or failed events for monitoring.
+       *
+       * @param ctx - The Convex context
+       * @param topicName - Optional: filter by topic name
+       * @param limit - Optional: limit number of results (default 100)
+       * @returns Array of pending/failed events
+       */
+      listPending: async (
+        ctx: RunQueryCtx,
+        topicName?: string,
+        limit?: number
+      ): Promise<any[]> => {
+        let topicId: string | undefined;
+
+        if (topicName) {
+          const topic = await ctx.runQuery(this.component.events.getTopicByName, {
+            name: topicName,
+          });
+          if (topic) {
+            topicId = topic._id;
+          }
+        }
+
+        const result = await ctx.runQuery(this.component.events.listPendingEvents, {
+          topicId: topicId as any,
+          limit,
+        });
+
+        return result.events;
+      },
+
+      /**
+       * Get detailed status for an event including all workflows.
+       *
+       * @param ctx - The Convex context
+       * @param eventId - The event ID
+       * @returns Event details and all associated workflows
+       */
+      getStatus: async (
+        ctx: RunQueryCtx,
+        eventId: string
+      ): Promise<EventStatusResult> => {
+        const result = await ctx.runQuery(this.component.events.getEventStatus, {
+          eventId: eventId as any,
+        });
+
+        return result as any;
+      },
+    };
   }
 }
 
