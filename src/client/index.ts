@@ -36,7 +36,7 @@ import { workflowMutation } from "./workflowMutation.js";
 import { validate } from "convex-helpers/validators";
 
 export { vWorkflowId, type WorkflowId } from "../types.js";
-export type { RunOptions, SignalDefinition, DefinedEvent } from "./types.js";
+export type { RunOptions, SignalDefinition, DefinedEvent, WorkflowStep } from "./types.js";
 
 export type CallbackOptions = {
   /**
