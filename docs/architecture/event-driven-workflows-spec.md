@@ -179,7 +179,12 @@ export type EventPayload<E extends DefinedEvent<any>> =
 // Type to ensure workflow args match event payload
 export type EventHandler<E extends DefinedEvent<any>> =
   E extends DefinedEvent<infer PayloadValidator>
-    ? RegisteredMutation<"internal", ObjectType<PayloadValidator>, any>
+    ? FunctionReference<
+        "mutation",
+        "internal",
+        ObjectType<PayloadValidator>,
+        any
+      >
     : never;
 ```
 
@@ -523,20 +528,22 @@ defineEvent<PayloadValidator extends PropertyValidators>(
     name: string;
     validator: ObjectType<PayloadValidator>;
     handlers?: Array<
-      RegisteredMutation<"internal", ObjectType<PayloadValidator>, any>
+      FunctionReference<"mutation", "internal", ObjectType<PayloadValidator>, any>
     >;
   }
-): DefinedEvent<PayloadValidator> {
+): DefinedEvent<PayloadValidator>
+{
   // Implementation...
 }
-```
-
-**Key mechanism**: The `handlers` array is constrained to accept only mutations where:
-- The mutation is `"internal"` visibility
-- The args type is `ObjectType<PayloadValidator>` (must match the event's payload exactly)
-- Return type can be anything (`any`)
+/**
+ * **Key mechanism**: The `handlers` array is constrained to accept only mutations where:
+ * - The mutation is "internal" visibility
+ * - The args type is `ObjectType<PayloadValidator>` (must match the event's payload exactly)
+ * - Return type can be anything (`any`)
+ */
 
 **Example of compile-time checking**:
+
 ```ts
 // ✅ This compiles - args match payload
 workflows.defineEvent({

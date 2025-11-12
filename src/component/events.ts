@@ -2,8 +2,13 @@ import { v } from "convex/values";
 import { assert } from "convex-helpers";
 import { validate, ValidationError } from "convex-helpers/validators";
 import type { FunctionHandle, Query, QueryInitializer } from "convex/server";
-import { mutation, query, type MutationCtx, internalMutation } from "./_generated/server.js";
-import { internal } from "./_generated/api.js";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  internalMutation,
+} from "./_generated/server.js";
+import { api, internal } from "./_generated/api.js";
 import {
   type Topic,
   type Event,
@@ -68,6 +73,7 @@ export const registerWorkflow = mutation({
   args: {
     topicId: v.id("topics"),
     workflowHandle: v.string(),
+    workflowName: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -84,7 +90,9 @@ export const registerWorkflow = mutation({
       .first();
 
     if (existing) {
-      console.debug(`Handler already registered: ${args.workflowHandle} for topic ${topic.name}`);
+      console.debug(
+        `Handler already registered: ${args.workflowHandle} for topic ${topic.name}`,
+      );
       return null;
     }
 
@@ -92,6 +100,7 @@ export const registerWorkflow = mutation({
     await ctx.db.insert("topicRegistrations", {
       topicId: args.topicId,
       workflowHandle: args.workflowHandle,
+      workflowName: args.workflowName,
       createdAt: Date.now(),
     });
 
@@ -168,12 +177,16 @@ export const publishEvent = mutation({
       const existing = await ctx.db
         .query("events")
         .withIndex("by_idempotency", (q) =>
-          q.eq("topicId", args.topicId).eq("idempotencyKey", args.idempotencyKey)
+          q
+            .eq("topicId", args.topicId)
+            .eq("idempotencyKey", args.idempotencyKey),
         )
         .first();
 
       if (existing) {
-        console.debug(`Duplicate event detected, returning existing: ${existing._id}`);
+        console.debug(
+          `Duplicate event detected, returning existing: ${existing._id}`,
+        );
 
         // Get workflow IDs for this event
         const eventWorkflows = await ctx.db
@@ -236,13 +249,18 @@ export const publishEvent = mutation({
 
     for (const registration of registrations) {
       try {
-        // Start the workflow with automatic completion tracking
-        const workflowId = await ctx.runMutation(
-          registration.workflowHandle as FunctionHandle<"mutation">,
-          args.payload
-        );
+        const workflowName =
+          registration.workflowName ??
+          registration.workflowHandle.split(":").pop() ??
+          "unknown";
 
-        // Track the event -> workflow relationship
+        const workflowId = await ctx.runMutation(api.workflow.create, {
+          workflowName,
+          workflowHandle: registration.workflowHandle,
+          workflowArgs: args.payload,
+          startAsync: false,
+        });
+
         await ctx.db.insert("eventWorkflows", {
           eventId,
           workflowId,
@@ -260,10 +278,13 @@ export const publishEvent = mutation({
         });
       } catch (error) {
         hasErrors = true;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Failed to start workflow ${registration.workflowHandle}:`, errorMessage);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error(
+          `Failed to start workflow ${registration.workflowHandle}:`,
+          errorMessage,
+        );
 
-        // Still track the failure
         await ctx.db.patch(eventId, {
           status: "failed",
           lastError: errorMessage,
@@ -313,14 +334,19 @@ export const markWorkflowCompleted = internalMutation({
       .first();
 
     if (!eventWorkflow) {
-      console.warn(`EventWorkflow not found for workflowId: ${args.workflowId}`);
+      console.warn(
+        `EventWorkflow not found for workflowId: ${args.workflowId}`,
+      );
       return null;
     }
 
     // Update eventWorkflow status based on result
     const status: EventWorkflow["status"] =
-      args.result.kind === "success" ? "completed" :
-      args.result.kind === "canceled" ? "canceled" : "failed";
+      args.result.kind === "success"
+        ? "completed"
+        : args.result.kind === "canceled"
+          ? "canceled"
+          : "failed";
 
     await ctx.db.patch(eventWorkflow._id, {
       status,
@@ -346,7 +372,7 @@ export const markWorkflowCompleted = internalMutation({
  */
 async function updateEventStatusIfComplete(
   ctx: MutationCtx,
-  eventId: Id<"events">
+  eventId: Id<"events">,
 ): Promise<void> {
   const console = await getDefaultLogger(ctx);
 
@@ -361,7 +387,10 @@ async function updateEventStatusIfComplete(
 
   // Check if all workflows are complete
   const allComplete = eventWorkflows.every(
-    (ew) => ew.status === "completed" || ew.status === "failed" || ew.status === "canceled"
+    (ew) =>
+      ew.status === "completed" ||
+      ew.status === "failed" ||
+      ew.status === "canceled",
   );
 
   if (!allComplete) {
@@ -377,10 +406,11 @@ async function updateEventStatusIfComplete(
     return;
   }
 
-  const newStatus: Event["status"] =
-    hasFailures ? "failed" :
-    hasCanceled ? "failed" : // Treat cancellations as failures
-    "completed";
+  const newStatus: Event["status"] = hasFailures
+    ? "failed"
+    : hasCanceled
+      ? "failed" // Treat cancellations as failures
+      : "completed";
 
   await ctx.db.patch(eventId, {
     status: newStatus,
@@ -423,7 +453,7 @@ export const replayEvent = mutation({
     // Filter to specific handler if specified
     if (args.workflowHandle) {
       registrations = registrations.filter(
-        (r) => r.workflowHandle === args.workflowHandle
+        (r) => r.workflowHandle === args.workflowHandle,
       );
       if (registrations.length === 0) {
         throw new Error(`Handler not found: ${args.workflowHandle}`);
@@ -447,10 +477,17 @@ export const replayEvent = mutation({
 
     for (const registration of registrations) {
       try {
-        const workflowId = await ctx.runMutation(
-          registration.workflowHandle as FunctionHandle<"mutation">,
-          event.payload
-        );
+        const workflowName =
+          registration.workflowName ??
+          registration.workflowHandle.split(":").pop() ??
+          "unknown";
+
+        const workflowId = await ctx.runMutation(api.workflow.create, {
+          workflowName,
+          workflowHandle: registration.workflowHandle,
+          workflowArgs: event.payload,
+          startAsync: false,
+        });
 
         await ctx.db.insert("eventWorkflows", {
           eventId: args.eventId,
@@ -469,8 +506,12 @@ export const replayEvent = mutation({
           isReplay: true,
         });
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Failed to replay workflow ${registration.workflowHandle}:`, errorMessage);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error(
+          `Failed to replay workflow ${registration.workflowHandle}:`,
+          errorMessage,
+        );
       }
     }
 
@@ -493,8 +534,9 @@ export const listPendingEvents = query({
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100;
 
-    const tableQuery: QueryInitializer<DataModel['events']> = ctx.db.query("events");
-    let indexedQuery: Query<DataModel['events']> = tableQuery;
+    const tableQuery: QueryInitializer<DataModel["events"]> =
+      ctx.db.query("events");
+    let indexedQuery: Query<DataModel["events"]> = tableQuery;
 
     if (args.topicId) {
       indexedQuery = tableQuery
@@ -502,8 +544,8 @@ export const listPendingEvents = query({
         .filter((q) =>
           q.or(
             q.eq(q.field("status"), "pending"),
-            q.eq(q.field("status"), "failed")
-          )
+            q.eq(q.field("status"), "failed"),
+          ),
         );
     } else {
       indexedQuery = tableQuery
@@ -511,8 +553,8 @@ export const listPendingEvents = query({
         .filter((q) =>
           q.or(
             q.eq(q.field("status"), "pending"),
-            q.eq(q.field("status"), "failed")
-          )
+            q.eq(q.field("status"), "failed"),
+          ),
         );
     }
 
@@ -529,12 +571,14 @@ export const listPendingEvents = query({
 export const listEventsByTopic = query({
   args: {
     topicId: v.id("topics"),
-    status: v.optional(v.union(
-      v.literal("pending"),
-      v.literal("dispatching"),
-      v.literal("completed"),
-      v.literal("failed")
-    )),
+    status: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("dispatching"),
+        v.literal("completed"),
+        v.literal("failed"),
+      ),
+    ),
     limit: v.optional(v.number()),
   },
   returns: v.object({

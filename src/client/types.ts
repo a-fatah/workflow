@@ -282,7 +282,7 @@ export type DefinedEvent<
   validator: PayloadValidator;
   _payload?: Payload;
   _topicId?: string; // Set internally after registration
-  _handlers?: ReadonlyArray<RegisteredMutation<"internal", Payload, any>>;
+  _handlers?: ReadonlyArray<FunctionReference<"mutation", "internal", Payload, any>>;
 };
 
 /**
@@ -299,7 +299,7 @@ export type EventPayload<E extends DefinedEvent<any>> =
  */
 export type EventHandler<E extends DefinedEvent<any>> =
   E extends DefinedEvent<infer PayloadValidator extends PropertyValidators>
-    ? RegisteredMutation<"internal", ObjectType<PayloadValidator>, any>
+    ? FunctionReference<"mutation", "internal", ObjectType<PayloadValidator>, any>
     : never;
 
 /**

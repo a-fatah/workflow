@@ -192,6 +192,7 @@ export type Topic = Infer<typeof topicDocument>;
 const topicRegistrationObject = {
   topicId: v.id("topics"),
   workflowHandle: v.string(),
+  workflowName: v.optional(v.string()),
   createdAt: v.number(),
 };
 

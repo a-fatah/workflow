@@ -1,15 +1,15 @@
 {
-  "name": "@convex-dev/workflow",
+  "name": "@a-fatah/workflow",
   "version": "0.2.7-alpha.0",
-  "description": "Convex component for durably executing workflows.",
+  "description": "Convex component for durably executing workflows (customized fork).",
   "keywords": [
     "convex",
     "workflow",
     "durable-execution"
   ],
-  "homepage": "https://github.com/get-convex/workflow",
-  "repository": "github:get-convex/workflow",
-  "bugs": "https://github.com/get-convex/workflow/issues",
+  "homepage": "https://github.com/a-fatah/workflow",
+  "repository": "github:a-fatah/workflow",
+  "bugs": "https://github.com/a-fatah/workflow/issues",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
     "all": "run-p -r 'example' 'build:watch' 'test:watch'",
     "setup": "npm i && npm run build && npx convex dev --once",
     "build:watch": "cd src && npx chokidar -d 1000 '../tsconfig.json' '**/*.ts' -c 'npm run build' --initial",
-    "build": "tsc --project ./tsconfig.build.json && npm run copy:dts && echo '{\\n  \"type\": \"module\"\\n}' > dist/package.json",
+    "build": "tsc --project ./tsconfig.build.json && npm run copy:dts && printf '{\\n  \"type\": \"module\"\\n}\\n' > dist/package.json",
     "copy:dts": "rsync -a --include='*/' --include='*.d.ts' --exclude='*' src/ dist/ || cpy 'src/**/*.d.ts' 'dist/' --parents",
     "typecheck": "tsc --noEmit && tsc -p example/convex",
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo",

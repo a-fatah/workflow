@@ -36,7 +36,7 @@ import { workflowMutation } from "./workflowMutation.js";
 import { validate } from "convex-helpers/validators";
 
 export { vWorkflowId, type WorkflowId } from "../types.js";
-export type { RunOptions, SignalDefinition } from "./types.js";
+export type { RunOptions, SignalDefinition, DefinedEvent } from "./types.js";
 
 export type CallbackOptions = {
   /**
@@ -403,21 +403,25 @@ export class WorkflowManager {
 
         if (!topicId) {
           // Define topic if not already done
+          // Pass null for validator - validation happens client-side
+          const topicName = eventDef.name;
           topicId = await ctx.runMutation(this.component.events.defineTopic, {
-            name: eventDef.name,
-            validator: eventDef.validator,
+            name: topicName,
+            validator: null,
           });
 
           // Register handlers if they were declared at definition time
           if (eventDef._handlers && eventDef._handlers.length > 0) {
             for (const handler of eventDef._handlers) {
-              const handlerRef = handler as any as FunctionReference<"mutation", "internal">;
-              const workflowHandle = await createFunctionHandle(handlerRef);
+              const workflowHandle = await createFunctionHandle(handler);
+              const workflowName = safeFunctionName(handler);
 
               await ctx.runMutation(this.component.events.registerWorkflow, {
                 topicId,
                 workflowHandle,
+                workflowName,
               });
+
             }
           }
 
